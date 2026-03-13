@@ -91,7 +91,7 @@ def main():
         commit: str = args.commit
         python_version: str = args.python_version
         install_cmds: list[str] = field(default_factory=lambda: [
-            "python -m pip install -e '.[dev]'" if args.install_cmd is None else args.install_cmd,
+            args.install_cmd if args.install_cmd else _conf("INSTALL_CMD", "python -m pip install ."),
         ])
 
     # Register it
@@ -145,6 +145,9 @@ def _build_image_https(profile, args):
     # Plain URL to reset remote after clone (so token isn't stored)
     clone_url_plain = f"https://github.com/{args.owner}/{args.repo}.git"
 
+    # Get install command from profile (sourced from repo.conf)
+    install_cmd = profile.install_cmds[0] if profile.install_cmds else "pip install -e ."
+
     # Try to get the base image
     base_image = "swebench/swesmith.x86_64"
     try:
@@ -180,12 +183,7 @@ RUN --mount=type=secret,id=gh_token \\
 WORKDIR /testbed
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -e ".[dev]" 2>/dev/null || \\
-    pip install --no-cache-dir -e . || \\
-    echo "WARNING: pip install failed, continuing anyway"
-
-# Install pytest if not already installed
-RUN pip install --no-cache-dir pytest 2>/dev/null || true
+RUN {install_cmd}
 
 # Ensure git is configured for swesmith
 RUN cd /testbed && \\

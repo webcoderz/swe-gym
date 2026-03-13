@@ -48,7 +48,7 @@ echo "Collected $PATCH_COUNT candidate patches → $PATCHES_JSON"
 # Run validation harness (tests baseline then tests with each patch applied)
 echo ""
 echo "--- [3b] Running validation harness ---"
-$RUN swesmith.harness.valid "$PATCHES_JSON"
+$RUN swesmith.harness.valid "$PATCHES_JSON" --workers "${VALIDATE_WORKERS:-4}"
 
 # Gather valid instances into SWE-bench-style dataset
 echo ""
@@ -65,6 +65,11 @@ if p.exists():
 else:
     print(0)
 " 2>/dev/null || echo "?")
+
+# Create valid_instances symlink for step 4 compatibility
+mkdir -p logs/valid_instances
+ln -sf "$(pwd)/logs/task_insts/$REPO_KEY.json" "logs/valid_instances/$REPO_KEY.json" 2>/dev/null || \
+    cp "logs/task_insts/$REPO_KEY.json" "logs/valid_instances/$REPO_KEY.json" 2>/dev/null || true
 
 echo ""
 echo "=== Validation complete ==="
