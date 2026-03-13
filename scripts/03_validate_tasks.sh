@@ -33,24 +33,32 @@ if [ ! -d "$BUG_DIR" ]; then
     exit 1
 fi
 
-# Collect all candidate instances into a single JSON
+# Collect all bug patches (.diff files) into a single JSON for the harness
 echo "--- [3a] Collecting candidates ---"
-$RUN swesmith.harness.gather "$BUG_DIR"
+$RUN swesmith.bug_gen.collect_patches "$BUG_DIR"
+
+PATCHES_JSON="logs/bug_gen/${REPO_KEY}_all_patches.json"
+if [ ! -f "$PATCHES_JSON" ]; then
+    echo "ERROR: No patches collected. Check $BUG_DIR for .diff files."
+    exit 1
+fi
+PATCH_COUNT=$(uv run python -c "import json; print(len(json.load(open('$PATCHES_JSON'))))" 2>/dev/null || echo "?")
+echo "Collected $PATCH_COUNT candidate patches → $PATCHES_JSON"
 
 # Run validation harness (tests baseline then tests with each patch applied)
 echo ""
 echo "--- [3b] Running validation harness ---"
-$RUN swesmith.harness.valid "$REPO_KEY"
+$RUN swesmith.harness.valid "$PATCHES_JSON"
 
-# Collect valid instances (those with FAIL_TO_PASS and PASS_TO_PASS)
+# Gather valid instances into SWE-bench-style dataset
 echo ""
-echo "--- [3c] Collecting valid instances ---"
-$RUN swesmith.harness.eval "$REPO_KEY"
+echo "--- [3c] Gathering valid instances ---"
+$RUN swesmith.harness.gather "logs/run_validation/$REPO_KEY"
 
 # Count results
 VALID_COUNT=$(uv run python -c "
 import json, pathlib
-p = pathlib.Path('logs/valid_instances/$REPO_KEY.json')
+p = pathlib.Path('logs/task_insts/$REPO_KEY.json')
 if p.exists():
     data = json.loads(p.read_text())
     print(len(data))
@@ -61,6 +69,6 @@ else:
 echo ""
 echo "=== Validation complete ==="
 echo "Valid task instances: $VALID_COUNT"
-echo "Output: logs/valid_instances/$REPO_KEY.json"
+echo "Output: logs/task_insts/$REPO_KEY.json"
 echo ""
 echo "Next: run ./scripts/04_train_skills.sh to start GEPA optimization."
