@@ -1,0 +1,40 @@
+# Unsloth GRPO — Qwen3-8B
+# RL training where the model learns by solving bugs.
+# Uses gym task instances as the reward signal.
+# VRAM: ~16GB (4-bit with vLLM inference)
+#
+# Usage:
+#   uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_8b.yaml
+
+model: Qwen/Qwen3-8B
+mode: grpo
+four_bit: true
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# GRPO-specific
+lr: 5e-6
+steps: 200
+batch_size: 4
+num_generations: 4
+max_seq_len: 10240
+max_completion_len: 4096
+reward_mode: hybrid  # format + test
+
+# Generation params
+temperature: 1.5
+min_p: 0.1
+gpu_memory_utilization: 0.6
+
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

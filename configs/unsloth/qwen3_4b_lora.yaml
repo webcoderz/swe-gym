@@ -1,0 +1,31 @@
+# Unsloth SFT — Qwen3-4B LoRA
+# Lightweight model, great for fast iteration and testing.
+# VRAM: ~8GB (16-bit) or ~4GB (4-bit)
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_4b_lora.yaml
+
+model: Qwen/Qwen3-4B
+mode: lora
+four_bit: false
+
+lora_rank: 32
+lora_alpha: 32
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 2e-4
+epochs: 3
+batch_size: 2
+grad_accum: 4
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

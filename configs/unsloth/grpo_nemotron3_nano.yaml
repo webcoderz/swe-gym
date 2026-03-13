@@ -1,0 +1,39 @@
+# Unsloth GRPO — NVIDIA Nemotron-3-Nano (30B-A3B MoE)
+# RL training with SOTA agentic MoE model.
+# Only ~3.6B active params — efficient for GRPO generation.
+# VRAM: ~24GB (4-bit with vLLM inference)
+#
+# Usage:
+#   uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_nemotron3_nano.yaml
+
+model: nvidia/Nemotron-3-Nano-30B-A3B
+mode: grpo
+four_bit: true
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 5e-6
+steps: 200
+batch_size: 4
+num_generations: 4
+max_seq_len: 16384
+max_completion_len: 4096
+reward_mode: hybrid
+
+temperature: 1.0
+top_p: 1.0
+min_p: 0.1
+gpu_memory_utilization: 0.6
+
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

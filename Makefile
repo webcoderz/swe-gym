@@ -2,7 +2,10 @@
 # Run from swe-gym/ directory or via root Makefile (make swe-gym-*)
 
 .PHONY: help setup build-env generate-tasks validate-tasks train evaluate \
-	smoke-test deploy-skills gen-trajectories prepare-sft train-sft clean
+	smoke-test deploy-skills gen-trajectories prepare-sft train-sft \
+	train-sft-unsloth train-dpo-unsloth train-grpo train-grpo-gptoss-120b \
+	train-sft-unsloth-gptoss-120b train-sft-fp8 train-grpo-fp8 \
+	train-sft-nemotron-super train-grpo-nemotron-super hpo hpo-thorough clean
 
 # Load repo config (REPO_OWNER, REPO_NAME, REPO_KEY, etc.)
 include repo.conf
@@ -25,13 +28,26 @@ help:
 	@echo "  make evaluate         Step 5: Evaluate with/without learned skills"
 	@echo ""
 	@echo "SFT Pipeline (after step 3):"
-	@echo "  make gen-trajectories Step 6: Generate expert solve traces"
-	@echo "  make prepare-sft     Step 7: Evaluate & convert to JSONL"
-	@echo "  make train-sft       Step 8: Local torchtune fine-tune"
+	@echo "  make gen-trajectories    Step 6: Generate expert solve traces"
+	@echo "  make prepare-sft         Step 7: Evaluate & convert to JSONL"
+	@echo "  make train-sft           Step 8: torchtune fine-tune (legacy)"
+	@echo "  make train-sft-unsloth   Step 8: Unsloth LoRA fine-tune (recommended)"
+	@echo "  make train-dpo-unsloth   DPO alignment (after SFT)"
+	@echo "  make train-cpt-unsloth   Continued pretraining (domain adaptation)"
+	@echo ""
+	@echo "GRPO RL (after step 3):"
+	@echo "  make train-grpo          Step 9: GRPO RL with gym tasks as reward"
+	@echo "  make train-grpo-test     Full Docker test suite reward"
+	@echo "  make train-grpo-fast     Format-only reward (fast iteration)"
+	@echo ""
+	@echo "Multi-GPU:"
+	@echo "  make train-sft-multigpu  DDP LoRA (2 GPUs)"
+	@echo "  make train-grpo-multigpu DDP GRPO (2 GPUs)"
 	@echo ""
 	@echo "Shortcuts:"
 	@echo "  make smoke-test       Quick 3-task validation run"
 	@echo "  make deploy-skills    Copy best_skills.txt to .claude/skills/"
+	@echo "  make train-recipe RECIPE=configs/unsloth/xxx.yaml"
 	@echo "  make clean            Remove generated logs and results"
 
 setup:
@@ -99,6 +115,7 @@ gen-trajectories:
 prepare-sft:
 	./scripts/07_prepare_sft.sh
 
+# ── Legacy torchtune training (configs in configs/torchtune/) ─
 train-sft:
 	./scripts/08_train_sft.sh
 
@@ -111,6 +128,110 @@ train-sft-32b:
 train-dpo:
 	./scripts/08_train_sft.sh --dpo
 
+# ── Unsloth training (recommended) ──────────────────────────
+# Default: Qwen3-8B LoRA from repo.conf SFT_BASE_MODEL
+train-sft-unsloth:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_8b_lora.yaml
+
+train-sft-unsloth-4bit:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_8b_lora.yaml --four-bit
+
+train-sft-unsloth-full:
+	uv run python scripts/08_train_sft_unsloth.py --full
+
+train-sft-unsloth-32b:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_32b_lora.yaml
+
+train-sft-unsloth-gptoss:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gpt_oss_20b_lora.yaml
+
+train-sft-unsloth-gptoss-120b:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gpt_oss_120b_lora.yaml --device-map balanced
+
+# New model recipes
+train-sft-nemotron:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_nano_lora.yaml
+
+train-sft-qwen3-coder:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_coder_next_lora.yaml --device-map balanced
+
+train-sft-nemotron-super:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_super_lora.yaml --device-map balanced
+
+# DPO and CPT
+train-dpo-unsloth:
+	uv run python scripts/08_train_sft_unsloth.py --dpo --sft-checkpoint ./sft_output/
+
+train-cpt-unsloth:
+	uv run python scripts/08_train_sft_unsloth.py --cpt --data-dir ./corpus/
+
+# Custom recipe: make train-recipe RECIPE=configs/unsloth/my_recipe.yaml
+train-recipe:
+	@test -n "$(RECIPE)" || (echo "Usage: make train-recipe RECIPE=configs/unsloth/xxx.yaml"; exit 1)
+	uv run python scripts/08_train_sft_unsloth.py --recipe $(RECIPE)
+
+# ── Multi-GPU training (DDP via torchrun) ─────────────────────
+# Scales linearly with GPU count. Each GPU gets distinct samples.
+NGPUS ?= 2
+
+train-sft-multigpu:
+	torchrun --nproc_per_node=$(NGPUS) scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_8b_lora.yaml
+
+train-sft-multigpu-4bit:
+	torchrun --nproc_per_node=$(NGPUS) scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_8b_lora.yaml --four-bit
+
+train-grpo-multigpu:
+	torchrun --nproc_per_node=$(NGPUS) scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_8b.yaml
+
+# Model splitting (pipeline parallelism — for models that don't fit on one GPU)
+train-sft-split:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_coder_next_lora.yaml --device-map balanced
+
+train-grpo-split:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_coder_next.yaml --device-map balanced
+
+# ── GRPO RL training (step 9) ───────────────────────────────
+train-grpo:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_8b.yaml
+
+train-grpo-test:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_8b.yaml --reward-mode test
+
+train-grpo-fast:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_4b.yaml --reward-mode format --steps 50
+
+train-grpo-nemotron:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_nemotron3_nano.yaml
+
+train-grpo-qwen3-coder:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_coder_next.yaml --device-map balanced
+
+train-grpo-nemotron-super:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_nemotron3_super.yaml --device-map balanced
+
+train-grpo-gptoss-120b:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gpt_oss_120b.yaml --device-map balanced
+
+# ── Hyperparameter optimization ───────────────────────────────
+hpo:
+	uv run python scripts/08b_hpo.py --recipe configs/unsloth/qwen3_8b_lora.yaml --four-bit
+
+hpo-thorough:
+	uv run python scripts/08b_hpo.py --recipe configs/unsloth/qwen3_8b_lora.yaml --four-bit --n-trials 30 --steps-per-trial 100
+
+# ── FP8 training (RTX 40/50, H100+) ──────────────────────────
+train-sft-fp8:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_8b_lora.yaml --fp8
+
+train-grpo-fp8:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_qwen3_8b.yaml --fp8 --vllm-standby
+
+# ── Export ────────────────────────────────────────────────────
+# Save to GGUF for llama.cpp / Ollama deployment
+export-gguf:
+	@test -d "./sft_output/final" || (echo "No model found. Run training first."; exit 1)
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_8b_lora.yaml --save-gguf q4_k_m
+
 clean:
-	rm -rf logs/ gepa_results/ sft_output/
+	rm -rf logs/ gepa_results/ sft_output/ grpo_output/ cpt_output/
 	@echo "Cleaned generated logs and results."

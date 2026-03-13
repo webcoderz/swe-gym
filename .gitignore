@@ -218,7 +218,6 @@ tmp/*
 tmp_*.sh
 tmp_*.py
 .claude/settings.local.json
-.claude/skills/
 .mcp.json
 swe-gym/gepa_results
 swe-gym/

@@ -1,0 +1,44 @@
+# Unsloth SFT — Qwen3-Coder-Next (80B MoE, ~3B active)
+# Current SOTA open-source coding model. 70.6% SWE-Bench Verified.
+# Non-reasoning model (no <think> tokens). 256K context.
+# VRAM: ~46GB (4-bit) — needs A100/H100 or multi-GPU
+#
+# Usage (single large GPU):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_coder_next_lora.yaml
+#
+# Multi-GPU (model splitting):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_coder_next_lora.yaml --device-map balanced
+#
+# Multi-GPU (DDP on 2x A100):
+#   torchrun --nproc_per_node=2 scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_coder_next_lora.yaml
+
+model: Qwen/Qwen3-Coder-Next
+mode: lora
+four_bit: true  # Required for single-GPU — 80B MoE
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 16
+max_seq_len: 16384
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Generation params (for inference/eval — critical for this model):
+# temperature: 1.0
+# top_p: 0.95
+# top_k: 40
+# min_p: 0.01  (llama.cpp default is 0.05 — must override!)

@@ -1,0 +1,37 @@
+# Unsloth SFT — GPT-OSS 120B LoRA
+# OpenAI's large open-source GPT. Requires multi-GPU.
+# VRAM: ~210GB (bf16 LoRA) or ~65GB (QLoRA 4-bit)
+#
+# Usage (multi-GPU model splitting — required):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gpt_oss_120b_lora.yaml --device-map balanced
+#
+# Usage (DDP with 4x A100 80GB):
+#   torchrun --nproc_per_node=4 scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gpt_oss_120b_lora.yaml
+
+model: unsloth/gpt-oss-120b-unsloth-bnb-4bit
+mode: lora
+four_bit: true  # Required unless you have 210GB+ VRAM
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 16
+max_seq_len: 16384
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# GPT-OSS specific: reasoning_effort can be set to "low", "medium", "high"
+# in the chat template for inference. Not a training param.

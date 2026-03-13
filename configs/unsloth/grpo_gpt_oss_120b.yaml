@@ -1,0 +1,55 @@
+# Unsloth GRPO — GPT-OSS 120B
+# RL training with OpenAI's large open-source GPT.
+# Requires multi-GPU (4x A100 80GB or equivalent).
+# VRAM: ~65GB (4-bit with vLLM inference)
+#
+# Usage (model splitting — required):
+#   uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gpt_oss_120b.yaml --device-map balanced
+#
+# Usage (DDP):
+#   torchrun --nproc_per_node=4 scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gpt_oss_120b.yaml
+
+model: unsloth/gpt-oss-120b-unsloth-bnb-4bit
+mode: grpo
+four_bit: true
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 5e-6
+steps: 200
+batch_size: 2
+num_generations: 4
+max_seq_len: 16384
+max_completion_len: 4096
+reward_mode: hybrid
+loss_type: grpo
+
+temperature: 1.0
+top_p: 1.0
+min_p: 0.1
+gpu_memory_utilization: 0.95  # Use 0.95 with vllm_standby
+
+# Advanced GRPO params
+beta: 0.0                     # No KL penalty (saves memory)
+epsilon: 0.2
+epsilon_high: 0.28            # DAPO-style one-sided clip
+delta: 1.5                    # Two-sided clip
+importance_sampling_level: token
+scale_rewards: group
+
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Memory efficiency
+vllm_standby: true            # Share weight memory (~9GB savings on 80GB GPUs)
+moe_backend: grouped_mm       # Fastest MoE backend

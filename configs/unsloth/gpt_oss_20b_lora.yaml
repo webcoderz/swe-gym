@@ -1,0 +1,31 @@
+# Unsloth SFT — GPT-OSS 20B LoRA
+# OpenAI's open-source GPT with long context support.
+# VRAM: ~32GB (16-bit) or ~16GB (4-bit)
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gpt_oss_20b_lora.yaml --four-bit
+
+model: meta-llama/gpt-oss-20b
+mode: lora
+four_bit: true
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 8
+max_seq_len: 16384
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

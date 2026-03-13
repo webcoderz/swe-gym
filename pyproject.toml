@@ -10,6 +10,7 @@ dependencies = [
     "mini-swe-agent",
     "pyyaml>=6.0",
     "cloudpickle>=3.0",
+    "datasets>=3.0",
     "wandb>=0.18",
 ]
 
@@ -22,7 +23,21 @@ sft = [
     "torch",
     "torchao",
 ]
+unsloth = [
+    "unsloth",
+    "torch",
+    "trl",
+    "datasets",
+    "optuna>=4.0",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.4",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # Line length handled by formatter

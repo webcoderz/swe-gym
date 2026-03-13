@@ -1,0 +1,17 @@
+{
+  "name": "swe-gym",
+  "description": "SWE-Gym: RL training pipeline for code agents — GEPA skill optimization, Unsloth SFT/GRPO/DPO fine-tuning, HPO, QAT, and deployment skills for Claude Code.",
+  "version": "0.1.0",
+  "author": {
+    "name": "webcoderz"
+  },
+  "repository": "https://github.com/webcoderz/swe-gym",
+  "license": "Apache-2.0",
+  "skills": [
+    ".claude/skills/swe-gym-pipeline",
+    ".claude/skills/unsloth-sft",
+    ".claude/skills/unsloth-grpo",
+    ".claude/skills/unsloth-hpo",
+    ".claude/skills/unsloth-train"
+  ]
+}

@@ -7,11 +7,11 @@
 #   - Full FT 32B (--32b, multi-GPU with 80GB each)
 #   - DPO 7B      (--dpo, after SFT, needs preference data)
 #
-# Configs (from SWE-smith upstream):
-#   configs/sft_lora_7b.yaml     — LoRA 7B (default)
-#   configs/sft_torchtune.yaml   — Full FT 7B
-#   configs/sft_qwen_32b.yaml   — Full FT 32B
-#   configs/dpo_qwen_7b.yaml    — DPO 7B
+# Configs (legacy torchtune):
+#   configs/torchtune/sft_lora_7b.yaml  — LoRA 7B (default)
+#   configs/torchtune/sft_full_7b.yaml  — Full FT 7B
+#   configs/torchtune/sft_full_32b.yaml — Full FT 32B
+#   configs/torchtune/dpo_7b.yaml       — DPO 7B
 #
 # Prerequisites:
 #   - Step 7 completed (SFT JSONL data)
@@ -56,7 +56,7 @@ done
 # Select config and recipe based on mode
 case "$FT_MODE" in
     lora)
-        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/sft_lora_7b.yaml}"
+        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/torchtune/sft_lora_7b.yaml}"
         MODEL_ID="${SFT_BASE_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}"
         if [ "$NUM_GPUS" -gt 1 ]; then
             RECIPE="lora_finetune_distributed"
@@ -65,7 +65,7 @@ case "$FT_MODE" in
         fi
         ;;
     full)
-        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/sft_torchtune.yaml}"
+        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/torchtune/sft_full_7b.yaml}"
         MODEL_ID="${SFT_BASE_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}"
         if [ "$NUM_GPUS" -gt 1 ]; then
             RECIPE="full_finetune_distributed"
@@ -74,7 +74,7 @@ case "$FT_MODE" in
         fi
         ;;
     full_32b)
-        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/sft_qwen_32b.yaml}"
+        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/torchtune/sft_full_32b.yaml}"
         MODEL_ID="Qwen/Qwen2.5-Coder-32B-Instruct"
         RECIPE="full_finetune_distributed"
         if [ "$NUM_GPUS" -lt 2 ]; then
@@ -83,7 +83,7 @@ case "$FT_MODE" in
         fi
         ;;
     dpo)
-        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/dpo_qwen_7b.yaml}"
+        CONFIG="${CUSTOM_CONFIG:-$SWE_GYM_DIR/configs/torchtune/dpo_7b.yaml}"
         MODEL_ID="${SFT_BASE_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}"
         RECIPE="full_finetune_distributed"
         if [ "$NUM_GPUS" -lt 2 ]; then

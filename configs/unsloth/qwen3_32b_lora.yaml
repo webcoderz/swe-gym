@@ -1,0 +1,31 @@
+# Unsloth SFT — Qwen3-32B LoRA
+# Large model with strong reasoning. Best results but needs more VRAM.
+# VRAM: ~48GB (16-bit) or ~24GB (4-bit)
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_32b_lora.yaml --four-bit
+
+model: Qwen/Qwen3-32B
+mode: lora
+four_bit: true  # Default to 4-bit for 32B — fits on a single A100/4090
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 16
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

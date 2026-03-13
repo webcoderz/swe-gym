@@ -1,0 +1,41 @@
+# Unsloth SFT — NVIDIA Nemotron-3-Nano (30B-A3B MoE)
+# SOTA agentic model. 30B params but only ~3.6B active (MoE).
+# Hybrid reasoning with tool calling support.
+# VRAM: ~24GB (4-bit) or ~60GB (16-bit LoRA)
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_nano_lora.yaml
+#
+# Multi-GPU (DDP):
+#   torchrun --nproc_per_node=2 scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_nano_lora.yaml
+#
+# Multi-GPU (model splitting for 16-bit):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_nano_lora.yaml --device-map balanced
+
+model: nvidia/Nemotron-3-Nano-30B-A3B
+mode: lora
+four_bit: true  # Fits on single 24GB GPU in 4-bit
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 16
+max_seq_len: 16384
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Nemotron-specific: 75% reasoning examples recommended in training mix
+# NoPE architecture — no YaRN scaling needed for long context

@@ -1,0 +1,31 @@
+# Unsloth SFT — Llama 3.1 8B LoRA
+# Strong general-purpose model with tool calling.
+# VRAM: ~16GB (16-bit) or ~8GB (4-bit)
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/llama3_8b_lora.yaml
+
+model: meta-llama/Llama-3.1-8B-Instruct
+mode: lora
+four_bit: false
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 2e-4
+epochs: 2
+batch_size: 1
+grad_accum: 8
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

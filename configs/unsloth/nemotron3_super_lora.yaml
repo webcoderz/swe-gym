@@ -1,0 +1,39 @@
+# Unsloth SFT — NVIDIA Nemotron-3-Super (120B-A12B MoE)
+# SOTA reasoning + agentic model. 120B total, ~12B active (MoE).
+# 1M context window, hybrid reasoning with <think> tokens.
+# VRAM: ~64-72GB (4-bit) — requires multi-GPU or A100 80GB.
+#
+# Usage (model splitting — recommended):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_super_lora.yaml --device-map balanced
+#
+# Multi-GPU (DDP):
+#   torchrun --nproc_per_node=2 scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_super_lora.yaml
+
+model: nvidia/Nemotron-3-Super-120B-A12B
+mode: lora
+four_bit: true
+
+lora_rank: 64
+lora_alpha: 64
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_up_proj    # MoE-specific combined gate+up projection
+  - down_proj
+
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 16
+max_seq_len: 16384
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# NoPE architecture — no YaRN scaling needed for long context
+# Hybrid reasoning: include ~75% reasoning examples in training mix
+# MoE optimization (12x faster MoE training)
+moe_backend: grouped_mm
