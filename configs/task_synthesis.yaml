@@ -1,0 +1,41 @@
+# SWE-Smith Task Synthesis Config
+# Controls how bug-introducing task instances are generated from the repo.
+
+# repo: (set via repo.conf → REPO_KEY)
+
+# --- Bug Generation Methods ---
+# SWE-smith supports 4 methods. Configure which to use and how many.
+
+methods:
+  # 1. LM Modify: LLM introduces subtle bugs into functions
+  lm_modify:
+    enabled: true
+    n_bugs: 50
+    model: openai/gpt-4o
+
+  # 2. LM Rewrite: LLM rewrites functions from scratch (introducing drift)
+  lm_rewrite:
+    enabled: true
+    n_bugs: 30
+    model: openai/gpt-4o
+
+  # 3. Procedural: AST-based rule transformations (remove if-blocks, swap operators, etc.)
+  procedural:
+    enabled: true
+    max_bugs: 100
+
+  # 4. Combined: merge multiple validated bugs into harder tasks
+  combine:
+    enabled: true
+    num_patches: 2  # bugs per combined instance
+
+# --- Validation ---
+# Filter to keep only tasks that break 1+ existing tests.
+validation:
+  min_fail_to_pass: 1   # must break at least 1 test
+  min_pass_to_pass: 1   # must leave at least 1 test passing
+
+# --- Issue Text ---
+# Generate natural-language issue descriptions for each validated task.
+issue_generation:
+  model: openai/gpt-4o

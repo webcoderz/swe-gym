@@ -1,0 +1,28 @@
+[project]
+name = "swe-gym"
+version = "0.1.0"
+description = "SWE-Smith RL gym + GEPA gskill optimization pipeline to fine-tune a model or create skills for a coding agent on any repository."
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "swesmith[all]",
+    "gepa @ git+https://github.com/gepa-ai/gepa.git@1e7bfe295cd5046d6bc580b38277247502ad1f7e",
+    "swebench",
+    "mini-swe-agent",
+    "pyyaml>=6.0",
+    "cloudpickle>=3.0",
+    "wandb>=0.18",
+]
+
+[tool.setuptools]
+packages = []
+
+[project.optional-dependencies]
+sft = [
+    "torchtune",
+    "torch",
+    "torchao",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]

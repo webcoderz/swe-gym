@@ -1,0 +1,43 @@
+# GEPA gskill Training Config
+# Runs the skill optimization loop: SWE-smith tasks + GEPA reflection.
+
+# repo: (set via repo.conf → REPO_KEY)
+
+# --- Dataset Splits ---
+# How many validated task instances to allocate per split.
+train_size: 200
+val_size: 50
+test_size: 100
+
+# --- Models ---
+# model: the agent model that runs inside Docker containers solving tasks
+# reflection_model: the LLM that analyzes pass/fail traces and proposes skill improvements
+model: gpt-5-mini
+reflection_model: gpt-5.2-pro
+
+# --- Parallelism ---
+workers: 6              # concurrent Docker containers
+max_metric_calls: 600   # total evaluation budget across all iterations
+
+# --- Proposer Strategy ---
+# "batch": sends all results to reflection model simultaneously (faster, cheaper)
+# "loop": processes results sequentially then merges (more detailed, costlier)
+proposer: loop
+
+# --- Reproducibility ---
+seed: 42
+
+# --- Limits ---
+timeout: 43200  # 12 hours max
+
+# --- Logging ---
+wandb: true  # enable Weights & Biases tracking
+
+# --- Smoke Test ---
+# Set to true for a quick 3-task validation run before full training.
+smoke_test: false
+
+# --- Output ---
+# Results save to: gepa_results/logs/run_<timestamp>_<id>/
+# Key output: gepa_results/logs/run_*/prompts/best_skills.txt
+# Copy best_skills.txt -> .claude/skills/<REPO_NAME>/SKILL.md for Claude Code

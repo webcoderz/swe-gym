@@ -1,0 +1,103 @@
+# TorchTune DPO — Qwen2.5-Coder-7B Direct Preference Optimization
+#
+# Based on SWE-smith's dpo_qwen_7b.yml.
+# Runs AFTER SFT — uses the SFT checkpoint as the starting point and the
+# original model as the reference. Requires paired preference data
+# (chosen/rejected trajectories).
+#
+# Launch:
+#   tune run --nproc_per_node 2 full_finetune_distributed --config configs/dpo_qwen_7b.yaml
+
+output_dir: ./sft_output/dpo/
+
+# Model (loads from SFT checkpoint)
+model:
+  _component_: torchtune.models.qwen2_5.qwen2_5_7b_instruct
+
+# Tokenizer
+tokenizer:
+  _component_: torchtune.models.qwen2_5.qwen2_5_tokenizer
+  path: /tmp/Qwen2.5-Coder-7B-Instruct/vocab.json
+  merges_file: /tmp/Qwen2.5-Coder-7B-Instruct/merges.txt
+  max_seq_len: 32768
+
+# Checkpointer — loads SFT checkpoint, not the original model
+checkpointer:
+  _component_: torchtune.training.FullModelHFCheckpointer
+  checkpoint_dir: ./sft_output/  # point to your SFT output
+  checkpoint_files: [
+    model-00001-of-00004.safetensors,
+    model-00002-of-00004.safetensors,
+    model-00003-of-00004.safetensors,
+    model-00004-of-00004.safetensors,
+  ]
+  recipe_checkpoint: null
+  output_dir: ${output_dir}
+  model_type: QWEN2
+  safe_serialization: true
+resume_from_checkpoint: false
+
+# Reference model — original pre-SFT weights
+ref_checkpointer:
+  _component_: torchtune.training.FullModelHFCheckpointer
+  checkpoint_dir: /tmp/Qwen2.5-Coder-7B-Instruct
+  checkpoint_files: [
+    model-00001-of-00004.safetensors,
+    model-00002-of-00004.safetensors,
+    model-00003-of-00004.safetensors,
+    model-00004-of-00004.safetensors,
+  ]
+  recipe_checkpoint: null
+  output_dir: ${output_dir}/ref/
+  model_type: QWEN2
+
+# Dataset — preference pairs (chosen/rejected)
+dataset:
+  _component_: torchtune.datasets.preferences_dataset
+  source: json
+  data_files: ./logs/sft_data/dpo_preferences.json
+  split: train
+  conversation_style: openai
+  train_on_input: false
+  new_system_prompt: null
+  packed: false
+seed: 42
+shuffle: true
+batch_size: 1
+
+# Optimizer
+optimizer:
+  _component_: torch.optim.AdamW
+  fused: true
+  weight_decay: 0.01
+  lr: 2e-5
+lr_scheduler:
+  _component_: torchtune.training.lr_schedulers.get_cosine_schedule_with_warmup
+  num_warmup_steps: 5
+
+# DPO Loss
+loss:
+  _component_: torchtune.modules.loss.DPOLoss
+  beta: 0.05
+  label_smoothing: 0.0
+
+# Training
+epochs: 2
+max_steps_per_epoch: null
+gradient_accumulation_steps: 4
+compile: true
+
+# Logging
+metric_logger:
+  _component_: torchtune.training.metric_logging.WandBLogger
+  project: swe-gym
+  group: dpo-7b
+  job_type: dpo
+log_every_n_steps: 1
+log_peak_memory_stats: true
+
+# Hardware
+device: cuda
+dtype: bf16
+enable_activation_checkpointing: true
+enable_activation_offloading: false

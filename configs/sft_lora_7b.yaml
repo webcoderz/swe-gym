@@ -1,0 +1,90 @@
+# TorchTune SFT — Qwen2.5-Coder-7B LoRA (single GPU friendly)
+#
+# LoRA fine-tune fits on a single 16-24GB GPU. Best starting point.
+#
+# Download model first:
+#   tune download Qwen/Qwen2.5-Coder-7B-Instruct --output-dir /tmp/Qwen2.5-Coder-7B-Instruct
+#
+# Launch:
+#   tune run lora_finetune_single_device --config configs/sft_lora_7b.yaml
+
+output_dir: ./sft_output/
+
+# Model — LoRA variant
+model:
+  _component_: torchtune.models.qwen2_5.lora_qwen2_5_7b_instruct
+  lora_attn_modules: ['q_proj', 'k_proj', 'v_proj', 'output_proj']
+  apply_lora_to_mlp: true
+  lora_rank: 64
+  lora_alpha: 64
+
+# Tokenizer
+tokenizer:
+  _component_: torchtune.models.qwen2_5.qwen2_5_tokenizer
+  path: /tmp/Qwen2.5-Coder-7B-Instruct/vocab.json
+  merges_file: /tmp/Qwen2.5-Coder-7B-Instruct/merges.txt
+  max_seq_len: 32768
+
+# Checkpointer
+checkpointer:
+  _component_: torchtune.training.FullModelHFCheckpointer
+  checkpoint_dir: /tmp/Qwen2.5-Coder-7B-Instruct
+  checkpoint_files: [
+    model-00001-of-00004.safetensors,
+    model-00002-of-00004.safetensors,
+    model-00003-of-00004.safetensors,
+    model-00004-of-00004.safetensors,
+  ]
+  recipe_checkpoint: null
+  output_dir: ${output_dir}
+  model_type: QWEN2
+  safe_serialization: true
+resume_from_checkpoint: false
+
+# Dataset
+dataset:
+  _component_: torchtune.datasets.chat_dataset
+  source: json
+  data_files: ./logs/sft_data/combined_train.jsonl
+  split: train
+  conversation_column: messages
+  conversation_style: openai
+  train_on_input: false
+  new_system_prompt: null
+  packed: false
+seed: 42
+shuffle: true
+batch_size: 1
+
+# Optimizer
+optimizer:
+  _component_: torch.optim.AdamW
+  fused: true
+  weight_decay: 0.01
+  lr: 2e-4
+lr_scheduler:
+  _component_: torchtune.training.lr_schedulers.get_cosine_schedule_with_warmup
+  num_warmup_steps: 10
+loss:
+  _component_: torchtune.modules.loss.CEWithChunkedOutputLoss
+
+# Training
+epochs: 2
+max_steps_per_epoch: null
+gradient_accumulation_steps: 8
+compile: true
+
+# Logging
+metric_logger:
+  _component_: torchtune.training.metric_logging.WandBLogger
+  project: swe-gym
+  group: sft-7b-lora
+  job_type: lora_finetune
+log_every_n_steps: 1
+log_peak_memory_stats: true
+
+# Hardware
+device: cuda
+dtype: bf16
+enable_activation_checkpointing: true
+enable_activation_offloading: false

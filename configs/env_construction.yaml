@@ -1,0 +1,28 @@
+# SWE-Smith Environment Construction Config
+# Builds a Docker image containing the target repo with its test suite installed.
+#
+# Usage:
+#   ./scripts/01_build_env.sh
+#
+# Repo owner/name come from repo.conf — these are only used as reference/docs.
+# repo: (set via repo.conf → REPO_KEY)
+# github_url: (set via repo.conf → REPO_OWNER/REPO_NAME)
+
+# Docker image naming: swesmith.x86_64.<repo>.<commit_hash>
+# The image includes the full repo with Python deps installed via uv.
+
+# Installation hints for SWE-smith's auto-installer.
+# Example install commands (customize for your repo's toolchain).
+install_commands:
+  - "curl -LsSf https://astral.sh/uv/install.sh | sh"
+  - "export PATH=\"$HOME/.local/bin:$PATH\""
+  - "uv venv .venv --python 3.12"
+  - "source .venv/bin/activate"
+  - "uv sync --frozen"
+
+# Test command that SWE-smith uses to verify the environment works.
+# Must exit 0 when all tests pass on a clean checkout.
+test_command: "source .venv/bin/activate && python -m pytest tests/ -x -q -m 'not integration and not eval' --timeout=120"
+
+# Optional: fork to a SWE-smith GitHub org for image hosting
+# org: swesmith
