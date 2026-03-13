@@ -91,6 +91,11 @@ def ensure_profile_registered(commit: str | None = None):
     _commit = commit
     _pyver = PYTHON_VERSION
     _install = _conf("INSTALL_CMD", "python -m pip install -e '.[dev]'")
+    _test_cmd = _conf(
+        "TEST_CMD",
+        "source /opt/miniconda3/bin/activate; conda activate testbed; "
+        "pytest --disable-warnings --color=no --tb=no --verbose",
+    )
 
     @dataclass
     class PrivateRepoProfile(PythonProfile):
@@ -101,6 +106,7 @@ def ensure_profile_registered(commit: str | None = None):
         install_cmds: list[str] = field(
             default_factory=lambda: [_install],
         )
+        test_cmd: str = _test_cmd
 
         @property
         def repo_name(self):
