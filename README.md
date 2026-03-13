@@ -48,7 +48,7 @@ cp .env.example .env
 | `ANTHROPIC_API_KEY` | No | Only needed if evaluating with Claude Code (step 5) |
 | `WANDB_API_KEY` | No | Enables live training dashboards for SFT. [Sign up free](https://wandb.ai) then run `wandb login` |
 
-### 3. Configure `repo.conf` for your target repository
+### 3. Configure `repo.conf` for your target repository , you will likely have to change the INSTALL_CMD and TEST_CMD to match your test environment.
 
 All repo-specific values live in **one file**: `repo.conf`. Edit it to point at the repo you want to build a gym for:
 
@@ -78,6 +78,8 @@ TRAIN_SIZE=200                    # Training task instances
 VAL_SIZE=50                       # Validation instances
 TEST_SIZE=100                     # Held-out test instances
 
+# Parallel Docker containers for validation (step 3b)
+VALIDATE_WORKERS=4
 # ── Bug Generation (Step 2) ─────────────────────────────────
 BUGGEN_MODEL=openai/gpt-4o       # LiteLLM format: provider/model
 BUGGEN_N_PER_FUNC=1              # Variants per function (1 = broad coverage)
