@@ -111,7 +111,8 @@ def ensure_profile_registered(commit: str | None = None):
         test_cmd: str = _test_cmd
         timeout_ref: int = _timeout_ref
         timeout: int = _timeout
-
+        min_testing: bool = True
+        
         @property
         def repo_name(self):
             """Return short key (owner__repo) so clone dir matches
