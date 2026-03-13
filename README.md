@@ -63,7 +63,11 @@ PYTHON_VERSION=3.12
 # ── Environment Build ────────────────────────────────────────
 # Install command run inside Docker after cloning. Must install
 # all deps needed to run the test suite.
-INSTALL_CMD="python -m pip install -e '.[dev]'"
+INSTALL_CMD="pip install uv && uv sync --extra test"
+# Test command run inside Docker containers during validation
+# Default PythonProfile assumes conda activate testbed; override for pip-based repos
+TEST_CMD="cd /testbed && uv run python -m pytest tests/ -m 'not integration and not eval' --disable-warnings --color=no --tb=short --verbose -p no:cacheprovider --continue-on-collection-errors"
+
 
 # ── GEPA gskill Training (Step 4) ───────────────────────────
 TRAIN_MODEL=gpt-5-mini           # Agent model (cheaper = faster training)
