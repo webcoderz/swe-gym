@@ -96,6 +96,8 @@ def ensure_profile_registered(commit: str | None = None):
         "source /opt/miniconda3/bin/activate; conda activate testbed; "
         "pytest --disable-warnings --color=no --tb=no --verbose",
     )
+    _timeout_ref = int(_conf("TIMEOUT_REF", "900"))
+    _timeout = int(_conf("TIMEOUT", "90"))
 
     @dataclass
     class PrivateRepoProfile(PythonProfile):
@@ -107,6 +109,8 @@ def ensure_profile_registered(commit: str | None = None):
             default_factory=lambda: [_install],
         )
         test_cmd: str = _test_cmd
+        timeout_ref: int = _timeout_ref
+        timeout: int = _timeout
 
         @property
         def repo_name(self):
