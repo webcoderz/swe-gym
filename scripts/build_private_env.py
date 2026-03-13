@@ -180,7 +180,7 @@ RUN apt-get update && apt-get install -y \\
 # Clone the private repository using token from build secret
 RUN --mount=type=secret,id=gh_token \\
     GH_TOKEN=$(cat /run/secrets/gh_token) && \\
-    git clone https://x-access-token:${{GH_TOKEN}}@github.com/{args.owner}/{args.repo}.git /testbed && \\
+    git clone https://{_conf("GIT_AUTH_USER", "x-access-token")}:${{GH_TOKEN}}@github.com/{args.owner}/{args.repo}.git /testbed && \\
     cd /testbed && \\
     git checkout {args.commit} && \\
     git remote set-url origin {clone_url_plain}

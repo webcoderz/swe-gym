@@ -112,7 +112,7 @@ def ensure_profile_registered(commit: str | None = None):
         timeout_ref: int = _timeout_ref
         timeout: int = _timeout
         min_testing: bool = True
-        
+
         @property
         def repo_name(self):
             """Return short key (owner__repo) so clone dir matches
@@ -170,11 +170,11 @@ def ensure_profile_registered(commit: str | None = None):
                 f"{self.owner}__{self.repo}.{self.commit[:8]}"
             )
             source_url = (
-                f"https://x-access-token:{token}@github.com/"
+                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
                 f"{self.owner}/{self.repo}.git"
             )
             push_url = (
-                f"https://x-access-token:{token}@github.com/"
+                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
                 f"{self.owner}/{mirror_repo}.git"
             )
 
