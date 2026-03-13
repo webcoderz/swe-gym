@@ -93,6 +93,11 @@ def main():
         install_cmds: list[str] = field(default_factory=lambda: [
             args.install_cmd if args.install_cmd else _conf("INSTALL_CMD", "python -m pip install ."),
         ])
+        # Override test command (default uses conda activate testbed which doesn't exist)
+        test_cmd: str = _conf("TEST_CMD", "pytest --disable-warnings --color=no --tb=no --verbose")
+        # Override timeouts (default 900s pre-gold, 90s per-patch)
+        timeout_ref: int = int(_conf("TIMEOUT_REF", "7200"))
+        timeout: int = int(_conf("TIMEOUT", "1800"))
 
     # Register it
     registry.register_profile(PrivateRepoProfile)
