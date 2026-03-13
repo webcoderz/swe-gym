@@ -235,3 +235,9 @@ export-gguf:
 clean:
 	rm -rf logs/ gepa_results/ sft_output/ grpo_output/ cpt_output/
 	@echo "Cleaned generated logs and results."
+
+# Remove stale swesmith Docker containers (from interrupted validation runs)
+clean-containers:
+	@echo "Removing stale swesmith containers..."
+	@docker rm -f $$(docker ps -aq --filter "name=swesmith") 2>/dev/null || true
+	@echo "Done."
