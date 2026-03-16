@@ -72,7 +72,6 @@ def load_local_data(repo: str, train_size: int, val_size: int, test_size: int, s
                 f"Please investigate the failing tests and fix the underlying issue."
             )
 
-
     # Shuffle with seed
     random.seed(seed)
     random.shuffle(all_data)
@@ -123,7 +122,6 @@ if __name__ == "__main__":
     litellm.completion = _patched_completion
     print("[patch] Redirected us.api.openai.com -> api.openai.com")
 
-
     # Detect repo from args (default from repo.conf)
     from conf import get as _conf
     repo = _conf("REPO_KEY")
@@ -139,30 +137,50 @@ if __name__ == "__main__":
     else:
         print(f"[patch] No local data for {repo}, falling back to HuggingFace")
 
-    # Patch unbounded agent_trace in side_info — the refiner prompt stuffs ALL
-    # evaluation history (with full agent traces) into a single LLM call.
-    # Without truncation, 200 tasks × multi-step traces = 11M+ tokens.
+    # Patch 1: Truncate agent_trace at the SOURCE (swe_fitness_fn).
+    # The fitness fn returns raw unbounded agent traces in side_info which
+    # then flow into BOTH the refiner AND reflection prompts, causing
+    # multi-million token requests.
+    import gepa.gskill.gskill.swe_fitness_fn as sff
+    _orig_create = sff.create_swe_fitness_fn
+
+    def _truncate_trace(side_info):
+        if isinstance(side_info, dict):
+            gen = side_info.get("Generated Outputs", {})
+            if isinstance(gen, dict) and "Agent Trace" in gen:
+                trace = gen["Agent Trace"]
+                if isinstance(trace, str) and len(trace) > 4000:
+                    gen["Agent Trace"] = (
+                        trace[:2000]
+                        + "\n... [truncated] ...\n"
+                        + trace[-2000:]
+                    )
+
+    def _patched_create(*args, **kwargs):
+        fitness_fn = _orig_create(*args, **kwargs)
+
+        def _truncating_wrapper(candidate, example):
+            score, side_info = fitness_fn(candidate, example)
+            _truncate_trace(side_info)
+            return score, side_info
+
+        return _truncating_wrapper
+
+    sff.create_swe_fitness_fn = _patched_create
+    print("[patch] Truncating agent traces at source (4K char cap)")
+
+    # Patch 2: Safety net on refiner feedback (caps total serialized size)
     import gepa.adapters.optimize_anything_adapter.optimize_anything_adapter as oaa
     _orig_format = oaa.OptimizeAnythingAdapter._format_all_attempts_feedback
 
     def _truncated_feedback(self, all_attempts: list[dict]) -> str:
-        MAX_TRACE_CHARS = 2000
-        MAX_TOTAL_CHARS = 200_000  # ~50K tokens total budget for feedback
-        for attempt in all_attempts:
-            si = attempt.get("side_info", {})
-            if isinstance(si, dict):
-                gen = si.get("Generated Outputs", {})
-                if isinstance(gen, dict) and "Agent Trace" in gen:
-                    trace = gen["Agent Trace"]
-                    if isinstance(trace, str) and len(trace) > MAX_TRACE_CHARS:
-                        gen["Agent Trace"] = trace[:MAX_TRACE_CHARS] + f"\n... [truncated {len(trace) - MAX_TRACE_CHARS} chars]"
         result = _orig_format(self, all_attempts)
-        if len(result) > MAX_TOTAL_CHARS:
-            result = result[:MAX_TOTAL_CHARS] + "\n... [truncated]"
+        if len(result) > 200_000:
+            result = result[:200_000] + "\n... [truncated]"
         return result
 
     oaa.OptimizeAnythingAdapter._format_all_attempts_feedback = _truncated_feedback
-    print("[patch] Truncated refiner feedback to prevent 11M+ token requests")
+    print("[patch] Capped refiner feedback at 200K chars")
 
     # Run the real main()
     from gepa.gskill.gskill.train_optimize_anything import main
