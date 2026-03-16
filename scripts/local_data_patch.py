@@ -53,6 +53,26 @@ def load_local_data(repo: str, train_size: int, val_size: int, test_size: int, s
 
     print(f"Loaded {len(all_data)} local task instances")
 
+    # Generate problem_statement for SWE-smith instances that lack one
+    for item in all_data:
+        if "problem_statement" not in item or not item["problem_statement"].strip():
+            f2p = item.get("FAIL_TO_PASS", [])
+            patch = item.get("patch", "")
+            # Extract changed files from patch
+            files = [
+                line.split(" b/")[-1]
+                for line in patch.split("\n")
+                if line.startswith("diff --git")
+            ]
+            files_str = ", ".join(files) if files else "unknown files"
+            tests_str = "\n".join(f"- {t}" for t in f2p) if f2p else "- (unknown tests)"
+            item["problem_statement"] = (
+                f"There is a bug in {files_str} that causes the following test(s) to fail:\n"
+                f"{tests_str}\n\n"
+                f"Please investigate the failing tests and fix the underlying issue."
+            )
+
+
     # Shuffle with seed
     random.seed(seed)
     random.shuffle(all_data)

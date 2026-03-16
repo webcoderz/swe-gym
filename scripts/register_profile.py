@@ -113,6 +113,55 @@ def ensure_profile_registered(commit: str | None = None):
         timeout: int = _timeout
         min_testing: bool = True
 
+        def get_container(self, instance: dict):
+            """Override to git fetch before checkout so branches pushed
+            after the image was built are available."""
+            import uuid
+            import docker
+            from swebench.harness.constants import DOCKER_USER, DOCKER_WORKDIR, KEY_INSTANCE_ID
+
+            client = docker.from_env()
+            self.pull_image()
+            instance_id = instance[KEY_INSTANCE_ID]
+            container_name = f"{instance_id}.{uuid.uuid4().hex[:8]}"
+            container = client.containers.create(
+                image=self.image_name,
+                name=container_name,
+                user=DOCKER_USER,
+                detach=True,
+                command="tail -f /dev/null",
+                platform="linux/x86_64",
+                mem_limit="10g",
+            )
+            container.start()
+
+            # Fetch latest branches from mirror (not in image)
+            token = os.environ.get("GITHUB_TOKEN", "")
+            fetch_url = (
+                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
+                f"{self.mirror_name}.git"
+            )
+            val = container.exec_run(
+                f"git fetch {fetch_url} {instance_id}",
+                workdir=DOCKER_WORKDIR,
+                user=DOCKER_USER,
+            )
+            if val.exit_code != 0:
+                raise RuntimeError(
+                    f"Failed to fetch instance {instance_id}: {val.output.decode()}"
+                )
+
+            val = container.exec_run(
+                f"git checkout FETCH_HEAD",
+                workdir=DOCKER_WORKDIR,
+                user=DOCKER_USER,
+            )
+            if val.exit_code != 0:
+                raise RuntimeError(
+                    f"Failed to checkout instance {instance_id}: {val.output.decode()}"
+                )
+            return container
+
         @property
         def repo_name(self):
             """Return short key (owner__repo) so clone dir matches
