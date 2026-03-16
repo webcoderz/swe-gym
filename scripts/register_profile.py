@@ -238,5 +238,11 @@ def ensure_profile_registered(commit: str | None = None):
     if short_key not in registry.data:
         registry.data[short_key] = PrivateRepoProfile
 
+    # Register under the "repo" field format used in task instances
+    # (e.g., "<owner>/<owner>__<repo>.<commit[:8]>")
+    mirror_key = f"{_owner}/{_owner}__{_repo}.{_commit[:8]}"
+    if mirror_key not in registry.data:
+        registry.data[mirror_key] = PrivateRepoProfile
+
     _registered = True
     print(f"[profile] Registered {_owner}/{_repo} @ {_commit[:8]}")
