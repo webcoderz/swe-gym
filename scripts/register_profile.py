@@ -113,6 +113,10 @@ def ensure_profile_registered(commit: str | None = None):
         timeout: int = _timeout
         min_testing: bool = True
 
+        def _is_repo_private(self) -> bool:
+            """Return False so swesmith uses HTTPS (not SSH) for git ops."""
+            return False
+
         def get_container(self, instance: dict):
             """Override to git fetch before checkout so branches pushed
             after the image was built are available."""
@@ -135,14 +139,21 @@ def ensure_profile_registered(commit: str | None = None):
             )
             container.start()
 
-            # Fetch latest branches from mirror (not in image)
+            # Set git remote to HTTPS+PAT so all git ops inside container work
             token = os.environ.get("GITHUB_TOKEN", "")
-            fetch_url = (
+            auth_url = (
                 f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
                 f"{self.mirror_name}.git"
             )
+            container.exec_run(
+                f"git remote set-url origin {auth_url}",
+                workdir=DOCKER_WORKDIR,
+                user=DOCKER_USER,
+            )
+
+            # Fetch the specific instance branch
             val = container.exec_run(
-                f"git fetch {fetch_url} {instance_id}",
+                f"git fetch origin {instance_id}",
                 workdir=DOCKER_WORKDIR,
                 user=DOCKER_USER,
             )
@@ -288,7 +299,7 @@ def ensure_profile_registered(commit: str | None = None):
         registry.data[short_key] = PrivateRepoProfile
 
     # Register under the "repo" field format used in task instances
-    # (e.g., "<owner>/<owner>__<repo>.<commit[:8]>")
+    # (e.g., "webcoderz/webcoderz__GraphisFree.2ccee559")
     mirror_key = f"{_owner}/{_owner}__{_repo}.{_commit[:8]}"
     if mirror_key not in registry.data:
         registry.data[mirror_key] = PrivateRepoProfile
