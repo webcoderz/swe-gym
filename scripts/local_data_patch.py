@@ -14,6 +14,7 @@ This script:
   3. Delegates to train_optimize_anything.main()
 """
 
+import importlib
 import json
 import random
 import sys
@@ -114,11 +115,13 @@ if __name__ == "__main__":
     # which fails if the API key doesn't support regional endpoints.
     from minisweagent.models.litellm_model import LitellmModel, litellm
     _orig_litellm_completion = litellm.completion
+
     def _patched_completion(*args, **kwargs):
         api_base = kwargs.get("api_base", "")
         if api_base and "us.api.openai.com" in api_base:
             kwargs["api_base"] = "https://api.openai.com/v1"
         return _orig_litellm_completion(*args, **kwargs)
+
     litellm.completion = _patched_completion
     print("[patch] Redirected us.api.openai.com -> api.openai.com")
 
@@ -131,17 +134,73 @@ if __name__ == "__main__":
 
     # Patch if local data exists, otherwise fall through to HF
     if has_local_data(repo):
-        import gepa.gskill.gskill.train_optimize_anything as toa
+        # IMPORTANT: use gskill.* imports (not gepa.gskill.gskill.*)
+        # to match how the code internally imports modules.
+        # Python treats these as different module objects otherwise.
+        import gskill.train_optimize_anything as toa
         toa.load_and_split_data = load_local_data
         print(f"[patch] Using local task data for {repo}")
     else:
         print(f"[patch] No local data for {repo}, falling back to HuggingFace")
 
+    # Patch 0: Fix swe_harness.py source file.
+    # Two issues:
+    #   a) step_limit hardcoded to 50 → change to 25
+    #   b) observation_template from mini.yaml NOT passed to LitellmModel,
+    #      so agent uses the DEFAULT template which has NO output truncation.
+    #      This causes agent conversations to grow to 13M+ tokens when
+    #      commands produce large output (find /, cat, pytest -v, etc.).
+    import gskill.swe_harness as _harness
+    _harness_path = _harness.__file__
+    with open(_harness_path) as f:
+        _src = f.read()
+    _needs_write = False
+
+    # 0a: step_limit
+    if 'agent_config["step_limit"] = 50' in _src:
+        _src = _src.replace(
+            'agent_config["step_limit"] = 50',
+            'agent_config["step_limit"] = 25'
+        )
+        _needs_write = True
+        print("[patch] swe_harness: step_limit=50→25")
+
+    # 0b: Pass observation_template + format_error_template to LitellmModel
+    # These are str fields (not Optional) so only pass if present in YAML.
+    _old_model_init = (
+        "model=LitellmModel(model_name=model_name, "
+        "model_kwargs=model_kwargs)"
+    )
+    _new_model_init = (
+        "model=LitellmModel(\n"
+        "                model_name=model_name,\n"
+        "                model_kwargs=model_kwargs,\n"
+        "                **{k: v for k, v in model_config.items()"
+        " if k in ('observation_template', "
+        "'format_error_template')},\n"
+        "            )"
+    )
+    if _old_model_init in _src:
+        _src = _src.replace(_old_model_init, _new_model_init)
+        _needs_write = True
+        print("[patch] swe_harness: passing observation_template "
+              "to LitellmModel")
+    else:
+        print("[patch] swe_harness: LitellmModel already patched "
+              "or marker not found")
+
+    if _needs_write:
+        with open(_harness_path, "w") as f:
+            f.write(_src)
+        importlib.reload(_harness)
+    else:
+        print("[patch] swe_harness: no changes needed")
+
     # Patch 1: Truncate agent_trace at the SOURCE (swe_fitness_fn).
     # The fitness fn returns raw unbounded agent traces in side_info which
     # then flow into BOTH the refiner AND reflection prompts, causing
     # multi-million token requests.
-    import gepa.gskill.gskill.swe_fitness_fn as sff
+    import gskill.swe_fitness_fn as sff
     _orig_create = sff.create_swe_fitness_fn
 
     def _truncate_trace(side_info):
@@ -167,6 +226,9 @@ if __name__ == "__main__":
         return _truncating_wrapper
 
     sff.create_swe_fitness_fn = _patched_create
+    # ALSO patch the local reference inside train_optimize_anything,
+    # which imports create_swe_fitness_fn at module level (line 27)
+    toa.create_swe_fitness_fn = _patched_create
     print("[patch] Truncating agent traces at source (4K char cap)")
 
     # Patch 2: Safety net on refiner feedback (caps total serialized size)
@@ -182,6 +244,53 @@ if __name__ == "__main__":
     oaa.OptimizeAnythingAdapter._format_all_attempts_feedback = _truncated_feedback
     print("[patch] Capped refiner feedback at 200K chars")
 
+    # Patch 3: Inject HTTPS+PAT auth into run_patch_in_container.
+    # swesmith's run_patch_in_container creates its own Docker containers for
+    # test evaluation but only sets up SSH auth for private repos. Our profile
+    # returns _is_repo_private()=False (we use HTTPS, not SSH), so the eval
+    # containers have no git auth → git fetch fails → tests never run.
+    # Fix: patch the source to inject `git remote set-url` with PAT after
+    # container.start(), before git fetch.
+    import swesmith.harness.utils as _shutils
+    _shutils_path = _shutils.__file__
+    with open(_shutils_path) as f:
+        _shsrc = f.read()
+
+    _git_user = _conf("GIT_AUTH_USER", "x-access-token")
+    _inject_marker = (
+        "container.start()\n\n"
+        "        # For private repos, copy SSH key"
+    )
+    # Build the injected source code with auth user baked in
+    _auth_block = "\n".join([
+        "container.start()",
+        "",
+        "        # [PATCH] HTTPS+PAT auth for private mirrors",
+        '        _gh_token = os.environ.get("GITHUB_TOKEN", "")',
+        '        if _gh_token and hasattr(rp, "mirror_name"):',
+        "            container.exec_run(",
+        "                f\"git remote set-url origin"
+        f" https://{_git_user}:"
+        '{_gh_token}@github.com/{rp.mirror_name}.git",',
+        "                workdir=DOCKER_WORKDIR,",
+        "                user=DOCKER_USER,",
+        "            )",
+        "",
+        "        # For private repos, copy SSH key",
+    ])
+
+    if _inject_marker in _shsrc and "[PATCH]" not in _shsrc:
+        _shsrc = _shsrc.replace(_inject_marker, _auth_block)
+        # Ensure os is imported at top of the module
+        if "import os\n" not in _shsrc:
+            _shsrc = "import os\n" + _shsrc
+        with open(_shutils_path, "w") as f:
+            f.write(_shsrc)
+        importlib.reload(_shutils)
+        print("[patch] Injected HTTPS+PAT auth into run_patch_in_container")
+    else:
+        print("[patch] run_patch_in_container auth already patched or marker not found")
+
     # Run the real main()
-    from gepa.gskill.gskill.train_optimize_anything import main
+    from gskill.train_optimize_anything import main
     main()
