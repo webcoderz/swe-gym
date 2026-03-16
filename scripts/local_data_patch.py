@@ -86,6 +86,10 @@ def has_local_data(repo: str) -> bool:
 
 
 if __name__ == "__main__":
+    # Register private repo profile so swesmith's registry can find it
+    import register_profile
+    register_profile.ensure_profile_registered()
+
     # Detect repo from args (default from repo.conf)
     from conf import get as _conf
     repo = _conf("REPO_KEY")
