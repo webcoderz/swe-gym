@@ -110,6 +110,20 @@ if __name__ == "__main__":
     import register_profile
     register_profile.ensure_profile_registered()
 
+    # Patch out hardcoded us.api.openai.com regional endpoint in swe_harness.
+    # GEPA hardcodes api_base="https://us.api.openai.com/v1" for OpenAI models
+    # which fails if the API key doesn't support regional endpoints.
+    from minisweagent.models.litellm_model import LitellmModel, litellm
+    _orig_litellm_completion = litellm.completion
+    def _patched_completion(*args, **kwargs):
+        api_base = kwargs.get("api_base", "")
+        if api_base and "us.api.openai.com" in api_base:
+            kwargs["api_base"] = "https://api.openai.com/v1"
+        return _orig_litellm_completion(*args, **kwargs)
+    litellm.completion = _patched_completion
+    print("[patch] Redirected us.api.openai.com -> api.openai.com")
+
+
     # Detect repo from args (default from repo.conf)
     from conf import get as _conf
     repo = _conf("REPO_KEY")
