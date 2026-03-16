@@ -139,6 +139,31 @@ if __name__ == "__main__":
     else:
         print(f"[patch] No local data for {repo}, falling back to HuggingFace")
 
+    # Patch unbounded agent_trace in side_info — the refiner prompt stuffs ALL
+    # evaluation history (with full agent traces) into a single LLM call.
+    # Without truncation, 200 tasks × multi-step traces = 11M+ tokens.
+    import gepa.adapters.optimize_anything_adapter.optimize_anything_adapter as oaa
+    _orig_format = oaa.OptimizeAnythingAdapter._format_all_attempts_feedback
+
+    def _truncated_feedback(self, all_attempts: list[dict]) -> str:
+        MAX_TRACE_CHARS = 2000
+        MAX_TOTAL_CHARS = 200_000  # ~50K tokens total budget for feedback
+        for attempt in all_attempts:
+            si = attempt.get("side_info", {})
+            if isinstance(si, dict):
+                gen = si.get("Generated Outputs", {})
+                if isinstance(gen, dict) and "Agent Trace" in gen:
+                    trace = gen["Agent Trace"]
+                    if isinstance(trace, str) and len(trace) > MAX_TRACE_CHARS:
+                        gen["Agent Trace"] = trace[:MAX_TRACE_CHARS] + f"\n... [truncated {len(trace) - MAX_TRACE_CHARS} chars]"
+        result = _orig_format(self, all_attempts)
+        if len(result) > MAX_TOTAL_CHARS:
+            result = result[:MAX_TOTAL_CHARS] + "\n... [truncated]"
+        return result
+
+    oaa.OptimizeAnythingAdapter._format_all_attempts_feedback = _truncated_feedback
+    print("[patch] Truncated refiner feedback to prevent 11M+ token requests")
+
     # Run the real main()
     from gepa.gskill.gskill.train_optimize_anything import main
     main()
