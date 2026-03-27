@@ -71,7 +71,7 @@ def ensure_profile_registered(commit: str | None = None):
 
     # Resolve commit if not provided
     if commit is None:
-        commit = os.getenv("SWESMITH_COMMIT")
+        commit = os.getenv("SWESMITH_COMMIT") or _conf("SWESMITH_COMMIT", None)
 
     if commit is None:
         # Use gh CLI to resolve latest commit
