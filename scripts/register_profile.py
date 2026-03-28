@@ -39,7 +39,10 @@ def _ensure_github_token():
     try:
         result = subprocess.run(
             "gh auth token",
-            shell=True, capture_output=True, text=True, check=True,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         token = result.stdout.strip()
         if token:
@@ -78,12 +81,17 @@ def ensure_profile_registered(commit: str | None = None):
         try:
             result = subprocess.run(
                 f"gh api repos/{REPO_OWNER}/{REPO_NAME}/commits/main --jq .sha",
-                shell=True, capture_output=True, text=True, check=True,
+                shell=True,
+                capture_output=True,
+                text=True,
+                check=True,
             )
             commit = result.stdout.strip()
         except Exception:
-            # Fallback: use a known commit
-            commit = "566cf8e0"
+            raise RuntimeError(
+                "Cannot resolve commit. Set SWESMITH_COMMIT in repo.conf "
+                "or ensure `gh auth login` is configured."
+            )
 
     # Capture resolved values as defaults so registry can do cls() with no args
     _owner = REPO_OWNER
@@ -141,10 +149,7 @@ def ensure_profile_registered(commit: str | None = None):
 
             # Set git remote to HTTPS+PAT so all git ops inside container work
             token = os.environ.get("GITHUB_TOKEN", "")
-            auth_url = (
-                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
-                f"{self.mirror_name}.git"
-            )
+            auth_url = f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/{self.mirror_name}.git"
             container.exec_run(
                 f"git remote set-url origin {auth_url}",
                 workdir=DOCKER_WORKDIR,
@@ -158,19 +163,15 @@ def ensure_profile_registered(commit: str | None = None):
                 user=DOCKER_USER,
             )
             if val.exit_code != 0:
-                raise RuntimeError(
-                    f"Failed to fetch instance {instance_id}: {val.output.decode()}"
-                )
+                raise RuntimeError(f"Failed to fetch instance {instance_id}: {val.output.decode()}")
 
             val = container.exec_run(
-                f"git checkout FETCH_HEAD",
+                "git checkout FETCH_HEAD",
                 workdir=DOCKER_WORKDIR,
                 user=DOCKER_USER,
             )
             if val.exit_code != 0:
-                raise RuntimeError(
-                    f"Failed to checkout instance {instance_id}: {val.output.decode()}"
-                )
+                raise RuntimeError(f"Failed to checkout instance {instance_id}: {val.output.decode()}")
             return container
 
         @property
@@ -185,7 +186,8 @@ def ensure_profile_registered(commit: str | None = None):
                 mirror = f"{self.owner}__{self.repo}.{self.commit[:8]}"
                 try:
                     self.api.repos.get(
-                        owner=self.owner, repo=mirror,
+                        owner=self.owner,
+                        repo=mirror,
                     )
                     self._cache_mirror_exists = True
                 except Exception:
@@ -195,10 +197,7 @@ def ensure_profile_registered(commit: str | None = None):
         @property
         def mirror_name(self):
             """Mirror lives in owner's org, not swesmith org."""
-            return (
-                f"{self.owner}/"
-                f"{self.owner}__{self.repo}.{self.commit[:8]}"
-            )
+            return f"{self.owner}/{self.owner}__{self.repo}.{self.commit[:8]}"
 
         @property
         def mirror_url(self):
@@ -217,8 +216,7 @@ def ensure_profile_registered(commit: str | None = None):
                 try:
                     info = self.api.repos.get(
                         owner=self.owner,
-                        repo=f"{self.owner}__{self.repo}"
-                             f".{self.commit[:8]}",
+                        repo=f"{self.owner}__{self.repo}.{self.commit[:8]}",
                     )
                     if info.get("size", 0) > 0:
                         return
@@ -226,28 +224,25 @@ def ensure_profile_registered(commit: str | None = None):
                     pass
 
             token = os.environ.get("GITHUB_TOKEN", "")
-            mirror_repo = (
-                f"{self.owner}__{self.repo}.{self.commit[:8]}"
-            )
+            mirror_repo = f"{self.owner}__{self.repo}.{self.commit[:8]}"
             source_url = (
-                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
-                f"{self.owner}/{self.repo}.git"
+                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/{self.owner}/{self.repo}.git"
             )
             push_url = (
-                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/"
-                f"{self.owner}/{mirror_repo}.git"
+                f"https://{_conf('GIT_AUTH_USER', 'x-access-token')}:{token}@github.com/{self.owner}/{mirror_repo}.git"
             )
 
             # Create mirror repo if it doesn't exist
             try:
                 self.api.repos.get(
-                    owner=self.owner, repo=mirror_repo,
+                    owner=self.owner,
+                    repo=mirror_repo,
                 )
             except Exception:
                 subprocess.run(
-                    f"gh repo create {self.owner}/{mirror_repo}"
-                    f" --private --confirm",
-                    shell=True, check=True,
+                    f"gh repo create {self.owner}/{mirror_repo} --private --confirm",
+                    shell=True,
+                    check=True,
                     capture_output=True,
                 )
 
@@ -256,25 +251,28 @@ def ensure_profile_registered(commit: str | None = None):
             if os.path.exists(tmp_dir):
                 shutil.rmtree(tmp_dir)
 
-            cmds = " && ".join([
-                f"git clone {source_url} {tmp_dir}",
-                f"cd {tmp_dir}",
-                f"git checkout {self.commit}",
-                "rm -rf .git",
-                "git init",
-                'git config user.name "swesmith"',
-                'git config user.email "swesmith@anon.com"',
-                "rm -rf .github/workflows .github/dependabot.y*",
-                "git add --force .",
-                "git commit --no-gpg-sign -m 'Initial commit'",
-                "git branch -M main",
-                f"git remote add origin {push_url}",
-                "git push -u origin main --force",
-            ])
-            print(f"[mirror] Pushing code to {self.owner}/"
-                  f"{mirror_repo}...")
+            cmds = " && ".join(
+                [
+                    f"git clone {source_url} {tmp_dir}",
+                    f"cd {tmp_dir}",
+                    f"git checkout {self.commit}",
+                    "rm -rf .git",
+                    "git init",
+                    'git config user.name "swesmith"',
+                    'git config user.email "swesmith@anon.com"',
+                    "rm -rf .github/workflows .github/dependabot.y*",
+                    "git add --force .",
+                    "git commit --no-gpg-sign -m 'Initial commit'",
+                    "git branch -M main",
+                    f"git remote add origin {push_url}",
+                    "git push -u origin main --force",
+                ]
+            )
+            print(f"[mirror] Pushing code to {self.owner}/{mirror_repo}...")
             subprocess.run(
-                cmds, shell=True, check=True,
+                cmds,
+                shell=True,
+                check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -284,7 +282,7 @@ def ensure_profile_registered(commit: str | None = None):
                 shutil.rmtree(tmp_dir)
 
             self._cache_mirror_exists = True
-            print(f"[mirror] Done.")
+            print("[mirror] Done.")
 
     registry.register_profile(PrivateRepoProfile)
 

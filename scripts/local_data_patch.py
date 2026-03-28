@@ -16,6 +16,7 @@ This script:
 
 import importlib
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -60,11 +61,7 @@ def load_local_data(repo: str, train_size: int, val_size: int, test_size: int, s
             f2p = item.get("FAIL_TO_PASS", [])
             patch = item.get("patch", "")
             # Extract changed files from patch
-            files = [
-                line.split(" b/")[-1]
-                for line in patch.split("\n")
-                if line.startswith("diff --git")
-            ]
+            files = [line.split(" b/")[-1] for line in patch.split("\n") if line.startswith("diff --git")]
             files_str = ", ".join(files) if files else "unknown files"
             tests_str = "\n".join(f"- {t}" for t in f2p) if f2p else "- (unknown tests)"
             item["problem_statement"] = (
@@ -86,8 +83,8 @@ def load_local_data(repo: str, train_size: int, val_size: int, test_size: int, s
         test_size = max(1, len(all_data) - train_size - val_size)
 
     train_data = all_data[:train_size]
-    val_data = all_data[train_size:train_size + val_size]
-    test_data = all_data[train_size + val_size:train_size + val_size + test_size]
+    val_data = all_data[train_size : train_size + val_size]
+    test_data = all_data[train_size + val_size : train_size + val_size + test_size]
 
     print(f"Split: {len(train_data)} train, {len(val_data)} val, {len(test_data)} test")
     return train_data, val_data, test_data
@@ -108,12 +105,14 @@ def has_local_data(repo: str) -> bool:
 if __name__ == "__main__":
     # Register private repo profile so swesmith's registry can find it
     import register_profile
+
     register_profile.ensure_profile_registered()
 
     # Patch out hardcoded us.api.openai.com regional endpoint in swe_harness.
     # GEPA hardcodes api_base="https://us.api.openai.com/v1" for OpenAI models
     # which fails if the API key doesn't support regional endpoints.
-    from minisweagent.models.litellm_model import LitellmModel, litellm
+    from minisweagent.models.litellm_model import litellm
+
     _orig_litellm_completion = litellm.completion
 
     def _patched_completion(*args, **kwargs):
@@ -127,6 +126,7 @@ if __name__ == "__main__":
 
     # Detect repo from args (default from repo.conf)
     from conf import get as _conf
+
     repo = _conf("REPO_KEY")
     for i, arg in enumerate(sys.argv):
         if arg == "--repo" and i + 1 < len(sys.argv):
@@ -138,6 +138,7 @@ if __name__ == "__main__":
         # to match how the code internally imports modules.
         # Python treats these as different module objects otherwise.
         import gskill.train_optimize_anything as toa
+
         toa.load_and_split_data = load_local_data
         print(f"[patch] Using local task data for {repo}")
     else:
@@ -151,6 +152,7 @@ if __name__ == "__main__":
     #      This causes agent conversations to grow to 13M+ tokens when
     #      commands produce large output (find /, cat, pytest -v, etc.).
     import gskill.swe_harness as _harness
+
     _harness_path = _harness.__file__
     with open(_harness_path) as f:
         _src = f.read()
@@ -158,19 +160,19 @@ if __name__ == "__main__":
 
     # 0a: step_limit
     if 'agent_config["step_limit"] = 50' in _src:
-        _src = _src.replace(
-            'agent_config["step_limit"] = 50',
-            'agent_config["step_limit"] = 25'
-        )
+        _src = _src.replace('agent_config["step_limit"] = 50', 'agent_config["step_limit"] = 25')
         _needs_write = True
         print("[patch] swe_harness: step_limit=50→25")
 
+    # 0a2: Fix us.api.openai.com in swe_harness too
+    if "us.api.openai.com" in _src:
+        _src = _src.replace("us.api.openai.com", "api.openai.com")
+        _needs_write = True
+        print("[patch] swe_harness: us.api.openai.com → api.openai.com")
+
     # 0b: Pass observation_template + format_error_template to LitellmModel
     # These are str fields (not Optional) so only pass if present in YAML.
-    _old_model_init = (
-        "model=LitellmModel(model_name=model_name, "
-        "model_kwargs=model_kwargs)"
-    )
+    _old_model_init = "model=LitellmModel(model_name=model_name, model_kwargs=model_kwargs)"
     _new_model_init = (
         "model=LitellmModel(\n"
         "                model_name=model_name,\n"
@@ -183,11 +185,9 @@ if __name__ == "__main__":
     if _old_model_init in _src:
         _src = _src.replace(_old_model_init, _new_model_init)
         _needs_write = True
-        print("[patch] swe_harness: passing observation_template "
-              "to LitellmModel")
+        print("[patch] swe_harness: passing observation_template to LitellmModel")
     else:
-        print("[patch] swe_harness: LitellmModel already patched "
-              "or marker not found")
+        print("[patch] swe_harness: LitellmModel already patched or marker not found")
 
     if _needs_write:
         with open(_harness_path, "w") as f:
@@ -196,11 +196,34 @@ if __name__ == "__main__":
     else:
         print("[patch] swe_harness: no changes needed")
 
+    # Patch 0c: Remove us.api.openai.com env var from train_optimize_anything.py.
+    # Line 660 sets OPENAI_API_BASE env var which litellm reads automatically,
+    # bypassing our kwarg-level redirect. This caused ALL proposer calls to fail
+    # with "incorrect regional hostname", so skills never evolved.
+    _toa_path = toa.__file__
+    with open(_toa_path) as f:
+        _toa_src = f.read()
+    _regional_env = 'os.environ["OPENAI_API_BASE"] = "https://us.api.openai.com/v1"'
+    _fixed_env = 'os.environ["OPENAI_API_BASE"] = "https://api.openai.com/v1"'
+    if _regional_env in _toa_src:
+        _toa_src = _toa_src.replace(_regional_env, _fixed_env)
+        with open(_toa_path, "w") as f:
+            f.write(_toa_src)
+        importlib.reload(toa)
+        # Re-apply patches that reload undid
+        toa.load_and_split_data = load_local_data
+        print("[patch] train_optimize_anything: "
+              "us.api.openai.com → api.openai.com env var")
+    else:
+        print("[patch] train_optimize_anything: "
+              "regional endpoint already patched or not found")
+
     # Patch 1: Truncate agent_trace at the SOURCE (swe_fitness_fn).
     # The fitness fn returns raw unbounded agent traces in side_info which
     # then flow into BOTH the refiner AND reflection prompts, causing
     # multi-million token requests.
     import gskill.swe_fitness_fn as sff
+
     _orig_create = sff.create_swe_fitness_fn
 
     def _truncate_trace(side_info):
@@ -209,11 +232,7 @@ if __name__ == "__main__":
             if isinstance(gen, dict) and "Agent Trace" in gen:
                 trace = gen["Agent Trace"]
                 if isinstance(trace, str) and len(trace) > 4000:
-                    gen["Agent Trace"] = (
-                        trace[:2000]
-                        + "\n... [truncated] ...\n"
-                        + trace[-2000:]
-                    )
+                    gen["Agent Trace"] = trace[:2000] + "\n... [truncated] ...\n" + trace[-2000:]
 
     def _patched_create(*args, **kwargs):
         fitness_fn = _orig_create(*args, **kwargs)
@@ -233,6 +252,7 @@ if __name__ == "__main__":
 
     # Patch 2: Safety net on refiner feedback (caps total serialized size)
     import gepa.adapters.optimize_anything_adapter.optimize_anything_adapter as oaa
+
     _orig_format = oaa.OptimizeAnythingAdapter._format_all_attempts_feedback
 
     def _truncated_feedback(self, all_attempts: list[dict]) -> str:
@@ -252,32 +272,32 @@ if __name__ == "__main__":
     # Fix: patch the source to inject `git remote set-url` with PAT after
     # container.start(), before git fetch.
     import swesmith.harness.utils as _shutils
+
     _shutils_path = _shutils.__file__
     with open(_shutils_path) as f:
         _shsrc = f.read()
 
     _git_user = _conf("GIT_AUTH_USER", "x-access-token")
-    _inject_marker = (
-        "container.start()\n\n"
-        "        # For private repos, copy SSH key"
-    )
+    _inject_marker = "container.start()\n\n        # For private repos, copy SSH key"
     # Build the injected source code with auth user baked in
-    _auth_block = "\n".join([
-        "container.start()",
-        "",
-        "        # [PATCH] HTTPS+PAT auth for private mirrors",
-        '        _gh_token = os.environ.get("GITHUB_TOKEN", "")',
-        '        if _gh_token and hasattr(rp, "mirror_name"):',
-        "            container.exec_run(",
-        "                f\"git remote set-url origin"
-        f" https://{_git_user}:"
-        '{_gh_token}@github.com/{rp.mirror_name}.git",',
-        "                workdir=DOCKER_WORKDIR,",
-        "                user=DOCKER_USER,",
-        "            )",
-        "",
-        "        # For private repos, copy SSH key",
-    ])
+    _auth_block = "\n".join(
+        [
+            "container.start()",
+            "",
+            "        # [PATCH] HTTPS+PAT auth for private mirrors",
+            '        _gh_token = os.environ.get("GITHUB_TOKEN", "")',
+            '        if _gh_token and hasattr(rp, "mirror_name"):',
+            "            container.exec_run(",
+            '                f"git remote set-url origin'
+            f" https://{_git_user}:"
+            '{_gh_token}@github.com/{rp.mirror_name}.git",',
+            "                workdir=DOCKER_WORKDIR,",
+            "                user=DOCKER_USER,",
+            "            )",
+            "",
+            "        # For private repos, copy SSH key",
+        ]
+    )
 
     if _inject_marker in _shsrc and "[PATCH]" not in _shsrc:
         _shsrc = _shsrc.replace(_inject_marker, _auth_block)
@@ -293,4 +313,5 @@ if __name__ == "__main__":
 
     # Run the real main()
     from gskill.train_optimize_anything import main
+
     main()
