@@ -1,0 +1,47 @@
+# Unsloth HPO — Google Gemma 4 E4B (8B, Dense+PLE)
+# Hyperparameter optimization via Optuna before full training.
+# Searches: rank, alpha, LR, weight_decay, warmup, scheduler, RSLoRA, grad_accum.
+# VRAM: ~5GB (4-bit) or ~16GB (16-bit LoRA) per trial
+#
+# Run HPO first, then use the best recipe for full SFT/GRPO.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/08b_hpo.py --recipe configs/unsloth/hpo_gemma4_e4b.yaml --n-trials 20
+#   uv run python scripts/08b_hpo.py --recipe configs/unsloth/hpo_gemma4_e4b.yaml --n-trials 10 --four-bit --pruning
+
+model: google/gemma-4-E4B-it
+mode: lora
+four_bit: false  # Enable for faster HPO trials on constrained VRAM
+
+# LoRA search space anchored at Unsloth's Gemma 4 defaults
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training — baseline params (Optuna will search around these)
+lr: 2e-4
+epochs: 1         # Short epochs for HPO trials
+batch_size: 1
+grad_accum: 4
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Gemma 4 chat template
+train_on_completions: true
+instruction_part: "<start_of_turn>user\n"
+response_part: "<start_of_turn>model\n"
+
+# Eval for HPO loss tracking
+eval_split: 0.1
+eval_steps: 10

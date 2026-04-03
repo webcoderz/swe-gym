@@ -203,7 +203,7 @@ Runs SWE-agent on validated task instances to produce expert solve traces.
 Evaluates which trajectories actually resolved their task, then converts successful ones to chat-format JSONL suitable for fine-tuning.
 
 ### Step 8: Train SFT (`08_train_sft_unsloth.py`)
-Fine-tune a model on expert trajectories using [Unsloth](https://unsloth.ai). Supports LoRA, QLoRA (4-bit, runs on 3GB VRAM!), full fine-tune, DPO, and continued pretraining. Default model is Qwen3-8B. Uses YAML recipe configs in `configs/unsloth/`.
+Fine-tune a model on expert trajectories using [Unsloth](https://unsloth.ai). Supports LoRA, QLoRA (4-bit, runs on 3GB VRAM!), full fine-tune, DPO, continued pretraining, and **vision/multimodal fine-tuning** (FastVisionModel). Default model is Qwen3-8B. Uses YAML recipe configs in `configs/unsloth/`.
 
 ```bash
 make train-sft-unsloth           # Qwen3-8B LoRA (default)
@@ -213,7 +213,12 @@ make train-sft-unsloth-gptoss    # GPT-OSS 20B LoRA (long context)
 make train-sft-nemotron          # Nemotron-3-Nano 30B MoE (SOTA agentic)
 make train-sft-qwen3-coder       # Qwen3-Coder-Next 80B MoE (SOTA coding)
 make train-sft-unsloth-full      # Full fine-tune
+make train-sft-gemma4            # Gemma 4 E4B LoRA (recommended Gemma default)
+make train-sft-gemma4-31b        # Gemma 4 31B LoRA (4-bit, A100/4090)
+make train-sft-gemma4-moe        # Gemma 4 26B-A4B MoE (multi-GPU)
+make train-sft-gemma4-vision     # Gemma 4 E4B vision fine-tuning
 make train-dpo-unsloth           # DPO (after SFT)
+make train-dpo-gemma4            # DPO — Gemma 4 E4B (after SFT)
 make train-cpt-unsloth           # Continued pretraining (domain adaptation)
 make train-recipe RECIPE=configs/unsloth/my_recipe.yaml  # Custom recipe
 ```
@@ -232,6 +237,12 @@ make train-recipe RECIPE=configs/unsloth/my_recipe.yaml  # Custom recipe
 | `nemotron3_nano_lora.yaml` | Nemotron-3-Nano 30B | ~3.6B (MoE) | ~24GB | SOTA agentic, hybrid reasoning |
 | `nemotron3_super_lora.yaml` | Nemotron-3-Super 120B | ~12B (MoE) | ~64-72GB | SOTA reasoning, 1M context |
 | `qwen3_coder_next_lora.yaml` | Qwen3-Coder-Next 80B | ~3B (MoE) | ~46GB | **SOTA coding.** 70.6% SWE-Bench |
+| `gemma4_e2b_lora.yaml` | Gemma 4 E2B | 5B | ~4GB | Smallest Gemma 4, multimodal capable |
+| `gemma4_e4b_lora.yaml` | Gemma 4 E4B | 8B | ~5GB | **Recommended Gemma 4.** Text+image+audio |
+| `gemma4_27b_moe_lora.yaml` | Gemma 4 26B-A4B | ~4B (MoE) | ~18GB | MoE — 4-bit not recommended, use 16-bit |
+| `gemma4_31b_lora.yaml` | Gemma 4 31B | 31B | ~20GB | Largest dense Gemma 4, 256K context |
+| `gemma4_e4b_vision_lora.yaml` | Gemma 4 E4B (vision) | 8B | ~8GB | FastVisionModel — image+audio fine-tuning |
+| `gemma4_31b_vision_lora.yaml` | Gemma 4 31B (vision) | 31B | ~24GB | FastVisionModel — image fine-tuning |
 
 **GRPO recipes:**
 
@@ -243,6 +254,10 @@ make train-recipe RECIPE=configs/unsloth/my_recipe.yaml  # Custom recipe
 | `grpo_qwen3_coder_next.yaml` | Qwen3-Coder-Next 80B | ~46GB | SOTA coding GRPO (GSPO) |
 | `grpo_nemotron3_super.yaml` | Nemotron-3-Super 120B | ~64-72GB | SOTA reasoning GRPO, multi-GPU |
 | `grpo_gpt_oss_120b.yaml` | GPT-OSS 120B | ~65GB | Multi-GPU required (4x A100) |
+| `grpo_gemma4_e2b.yaml` | Gemma 4 E2B | ~8GB | Fast Gemma 4 GRPO iteration |
+| `grpo_gemma4_e4b.yaml` | Gemma 4 E4B | ~12GB | Recommended Gemma 4 GRPO |
+| `grpo_gemma4_27b_moe.yaml` | Gemma 4 26B-A4B (MoE) | ~24GB | MoE — use 16-bit, multi-GPU |
+| `grpo_gemma4_31b.yaml` | Gemma 4 31B | ~24GB | Largest dense Gemma 4 |
 
 Recipes are YAML files — copy one and customize for your needs. CLI args override recipe values.
 
@@ -291,6 +306,7 @@ python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/qwen3_coder_next
 | Save MXFP4 | `--save-mxfp4` | 75% less disk space |
 | Push to Hub | `--push-to-hub user/model` | Upload merged model to HuggingFace |
 | 8-bit quantization | `--eight-bit` | Middle ground between 4-bit and 16-bit |
+| Vision fine-tuning | `--vision` | FastVisionModel for image/audio (Gemma 4, etc.) |
 | Continued pretraining | `--cpt --data-dir ./corpus/` | Domain adaptation before SFT |
 
 > **Legacy:** `make train-sft` still works via [torchtune](https://github.com/meta-pytorch/torchtune) (configs in `configs/torchtune/`), but torchtune has [stopped active development](https://github.com/meta-pytorch/torchtune/issues/2883). [torchforge](https://github.com/meta-pytorch/torchforge) is its successor but only supports full SFT and GRPO currently (no LoRA/DPO).
@@ -306,6 +322,9 @@ make train-grpo-nemotron     # Nemotron-3-Nano MoE
 make train-grpo-qwen3-coder   # Qwen3-Coder-Next (multi-GPU)
 make train-grpo-nemotron-super # Nemotron-3-Super 120B (multi-GPU)
 make train-grpo-gptoss-120b   # GPT-OSS 120B (4x A100)
+make train-grpo-gemma4        # Gemma 4 E4B (recommended Gemma GRPO)
+make train-grpo-gemma4-31b    # Gemma 4 31B
+make train-grpo-gemma4-moe    # Gemma 4 26B-A4B MoE (multi-GPU)
 make train-grpo-fp8          # FP8 + vLLM standby (RTX 40/50, H100+)
 make train-grpo-multigpu     # DDP with 2 GPUs
 ```
@@ -412,6 +431,9 @@ Approximate VRAM needed per model size (minimums — actual usage may be higher)
 | **Agentic tasks (small)** | Nemotron-3-Nano 30B | SOTA agentic, hybrid reasoning, MoE ~3.6B active |
 | **General purpose (large)** | Qwen3-32B | Strong reasoning, fits on A100/4090 |
 | **General purpose (small)** | Qwen3-8B | Native tool calling, good balance |
+| **Multimodal (vision+audio)** | Gemma 4 E4B | Image+audio+text, 128K context, `<\|think\|>` reasoning |
+| **Multimodal (large)** | Gemma 4 31B | Image+text, 256K context, dense |
+| **Efficient MoE (small)** | Gemma 4 26B-A4B | Only 4B active params, 256K context |
 | **Fast iteration / testing** | Qwen3-4B | Quick experiments, low VRAM |
 | **Long context** | GPT-OSS 20B/120B | OpenAI's open models, 16K+ context |
 
@@ -498,6 +520,59 @@ CPT uses `UnslothTrainer` with separate embedding learning rates. It adds `lm_he
 ```bash
 python scripts/08_train_sft_unsloth.py --model ./cpt_output/merged/ --recipe configs/unsloth/qwen3_8b_lora.yaml
 ```
+
+## Vision / Multimodal Fine-Tuning
+
+Fine-tune vision-language models (Gemma 4, Llama 3.2 Vision, etc.) on image+text or audio+text data using Unsloth's `FastVisionModel`:
+
+```bash
+make train-sft-gemma4-vision          # Gemma 4 E4B vision (image+audio+text)
+make train-sft-gemma4-vision-31b      # Gemma 4 31B vision (image+text, 4-bit)
+
+# Or with --vision flag on any vision-capable model:
+python scripts/08_train_sft_unsloth.py --vision --model google/gemma-4-E4B-it
+```
+
+**Data format** — messages with content blocks (images/audio must precede text):
+```json
+{"messages": [
+  {"role": "user", "content": [
+    {"type": "image", "image": "path/to/image.jpg"},
+    {"type": "text", "text": "Describe this image."}
+  ]},
+  {"role": "assistant", "content": [
+    {"type": "text", "text": "The image shows..."}
+  ]}
+]}
+```
+
+**Vision recipe fields** (in YAML):
+| Field | Default | Notes |
+|-------|---------|-------|
+| `vision` | `false` | Enable FastVisionModel instead of FastLanguageModel |
+| `finetune_vision_layers` | `true` | Train vision encoder (set `false` to save VRAM) |
+| `finetune_language_layers` | `true` | Train language model layers |
+| `finetune_attention_modules` | `true` | Train attention modules |
+| `finetune_mlp_modules` | `true` | Train MLP modules |
+| `vision_resize` | `null` | Image resize: int (pixels), `"min"`, `"max"`, or `null` (auto) |
+| `lora_targets` | `"all-linear"` | Vision models typically use all-linear |
+
+**Tips:**
+- Use images of consistent dimensions (300-1000px) for efficient batching
+- Start with `finetune_vision_layers: false` to save VRAM, enable after text works
+- Audio clips should be short and task-specific (≤30s)
+- No packing for vision — the `UnslothVisionDataCollator` handles batching
+
+## Gemma 4 Reasoning Preservation
+
+Gemma 4 models support chain-of-thought reasoning via the `<|think|>` token. To preserve this during fine-tuning:
+
+1. **Activate thinking mode** — prepend `<|think|>` to your system prompt
+2. **Training data mix** — maintain ≥75% reasoning examples (with thinking traces)
+3. **Train on completions only** — all Gemma 4 recipes set `train_on_completions: true` with Gemma's chat template tokens (`<start_of_turn>user\n` / `<start_of_turn>model\n`)
+4. **MoE variant (26B-A4B)** — do NOT use 4-bit quantization for MoE; use 16-bit LoRA with `--device-map balanced`
+
+Reference: [Unsloth Gemma 4 Training Guide](https://unsloth.ai/docs/models/gemma-4/train)
 
 ## Project Structure
 

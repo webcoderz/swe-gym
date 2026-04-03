@@ -1,0 +1,56 @@
+# Unsloth SFT — Google Gemma 4 26B-A4B (MoE, 4B active)
+# Mixture-of-Experts: 26B total params, only 4B active per token.
+# 256K context. Supports text and image.
+# VRAM: ~18GB (4-bit) or ~28GB (8-bit) — 16-bit recommended for MoE
+#
+# IMPORTANT: 4-bit quantization is NOT recommended for MoE variants.
+#   Use 16-bit LoRA (default) or 8-bit. For multi-GPU: --device-map balanced
+#
+# Reasoning: Gemma 4 supports <|think|> reasoning via system prompt.
+#   Preserve reasoning by keeping >=75% reasoning examples in training mix.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage (single GPU, 16-bit — needs ~28GB+ VRAM):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_27b_moe_lora.yaml
+#
+# Multi-GPU (model splitting):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_27b_moe_lora.yaml --device-map balanced
+
+model: google/gemma-4-26B-A4B-it
+mode: lora
+# four_bit: false  # NOT recommended for MoE — use 16-bit or 8-bit
+# eight_bit: true  # Uncomment for ~18GB VRAM (compromise)
+
+# LoRA config — r=16 per Unsloth Gemma 4 recommendation
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training — lower LR for MoE stability
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 8
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Gemma 4 chat template for train_on_completions
+train_on_completions: true
+instruction_part: "<start_of_turn>user\n"
+response_part: "<start_of_turn>model\n"
+
+# MoE optimization: use grouped_mm backend for faster training (GRPO script).
+# moe_backend: grouped_mm  # 12x faster MoE training (when supported)
+
+# Reasoning: maintain >=75% reasoning examples in training data.
+# Add "<|think|>" to system prompt to activate thinking mode.

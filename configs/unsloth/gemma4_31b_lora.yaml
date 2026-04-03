@@ -1,0 +1,52 @@
+# Unsloth SFT — Google Gemma 4 31B (Dense)
+# Largest dense Gemma 4. Maximum quality for text and image tasks.
+# 256K context. Best Gemma 4 for single-modality fine-tuning.
+# VRAM: ~20GB (4-bit) or ~34GB (8-bit) or ~64GB (16-bit)
+#
+# Reasoning: Gemma 4 supports <|think|> reasoning via system prompt.
+#   Preserve reasoning by keeping >=75% reasoning examples in training mix.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_lora.yaml --four-bit
+#
+# Multi-GPU (16-bit, model splitting):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_lora.yaml --device-map balanced
+#
+# Vision fine-tuning (see gemma4_31b_vision_lora.yaml):
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_vision_lora.yaml --four-bit
+
+model: google/gemma-4-31B-it
+mode: lora
+four_bit: true  # Fits on single 24GB GPU in 4-bit
+
+# LoRA config — r=16 per Unsloth Gemma 4 recommendation
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training — lower LR for larger model
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 16
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Gemma 4 chat template for train_on_completions
+train_on_completions: true
+instruction_part: "<start_of_turn>user\n"
+response_part: "<start_of_turn>model\n"
+
+# Reasoning: maintain >=75% reasoning examples in training data.
+# Add "<|think|>" to system prompt to activate thinking mode.

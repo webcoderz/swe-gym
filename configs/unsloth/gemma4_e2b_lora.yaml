@@ -1,0 +1,47 @@
+# Unsloth SFT — Google Gemma 4 E2B (5B, Dense+PLE)
+# Smallest Gemma 4 model. Supports text, image, and audio.
+# 128K context. Excellent for lightweight fine-tuning.
+# VRAM: ~4GB (4-bit) or ~15GB (16-bit LoRA)
+#
+# Reasoning: Gemma 4 supports <|think|> reasoning via system prompt.
+#   Preserve reasoning by keeping >=75% reasoning examples in training mix.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e2b_lora.yaml
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e2b_lora.yaml --four-bit
+
+model: google/gemma-4-E2B-it
+mode: lora
+four_bit: false  # Enable for ~4GB VRAM; 16-bit recommended for quality
+
+# LoRA config — r=16 per Unsloth Gemma 4 recommendation
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training
+lr: 2e-4
+epochs: 2
+batch_size: 1
+grad_accum: 4
+max_seq_len: 8192
+packing: false
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Gemma 4 chat template for train_on_completions
+train_on_completions: true
+instruction_part: "<start_of_turn>user\n"
+response_part: "<start_of_turn>model\n"
+
+# Reasoning: maintain >=75% reasoning examples in training data.
+# Add "<|think|>" to system prompt to activate thinking mode.

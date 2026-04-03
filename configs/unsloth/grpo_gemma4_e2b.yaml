@@ -1,0 +1,44 @@
+# Unsloth GRPO — Google Gemma 4 E2B (5B, Dense+PLE)
+# RL training with the smallest Gemma 4 model.
+# Fast iteration for reward signal experimentation.
+# VRAM: ~8GB (4-bit with vLLM inference)
+#
+# Reasoning: Use <|think|> in system prompt for chain-of-thought.
+#   GRPO naturally preserves reasoning when reward signals value it.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gemma4_e2b.yaml
+
+model: google/gemma-4-E2B-it
+mode: grpo
+four_bit: true
+
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 5e-6
+steps: 200
+batch_size: 4
+num_generations: 4
+max_seq_len: 8192
+max_completion_len: 4096
+reward_mode: hybrid
+
+temperature: 1.0
+top_p: 0.95
+top_k: 64
+min_p: 0.1
+gpu_memory_utilization: 0.6
+
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

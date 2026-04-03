@@ -2,7 +2,8 @@
 """Step 8 (alt): Fine-tune a model using Unsloth.
 
 Local training — runs on whatever GPU(s) are available.
-Supports LoRA SFT (default), full SFT, DPO, and continued pretraining.
+Supports LoRA SFT (default), full SFT, DPO, continued pretraining,
+and vision/multimodal fine-tuning (FastVisionModel).
 ALL Unsloth capabilities are configurable via YAML recipe or CLI flags.
 
 Single GPU:
@@ -24,6 +25,10 @@ DPO (after SFT):
 
 Continued pretraining:
     python scripts/08_train_sft_unsloth.py --cpt --data-dir ./corpus/
+
+Vision/multimodal fine-tuning (Gemma 4, Llama 3.2 Vision, etc.):
+    python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e4b_vision_lora.yaml
+    python scripts/08_train_sft_unsloth.py --vision --model google/gemma-4-E4B-it
 
 GGUF export:
     python scripts/08_train_sft_unsloth.py --recipe ... --save-gguf q4_k_m
@@ -50,6 +55,15 @@ RECIPE_DEFAULTS = {
     "trust_remote_code": False,  # Required for some newer model architectures
     "revision": None,         # Pin specific model revision from Hub (e.g. "main", commit hash)
     "resize_model_vocab": None,  # Resize vocab (int) — for adding custom special tokens
+
+    # ── Vision (multimodal) ──
+    "vision": False,          # Use FastVisionModel instead of FastLanguageModel
+    "finetune_vision_layers": True,   # Train vision encoder layers
+    "finetune_language_layers": True,  # Train language model layers
+    "finetune_attention_modules": True,  # Train attention modules
+    "finetune_mlp_modules": True,  # Train MLP modules
+    "vision_resize": None,    # Image resize: int (pixels), "min", "max", or None (auto)
+    "vision_snap_to_patch_size": True,  # Force images to match patch size
 
     # ── Quantization ──
     "four_bit": False,        # QLoRA 4-bit (minimal VRAM)
@@ -155,6 +169,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--full", action="store_true", help="Full fine-tune instead of LoRA")
     p.add_argument("--dpo", action="store_true", help="DPO training (requires --sft-checkpoint)")
     p.add_argument("--cpt", action="store_true", help="Continued pretraining (domain adaptation)")
+    p.add_argument("--vision", action="store_true", help="Vision fine-tuning (uses FastVisionModel)")
     p.add_argument("--sft-checkpoint", default=None, help="Path to SFT checkpoint for DPO")
 
     # Quantization
@@ -241,6 +256,8 @@ def apply_overrides(recipe: dict, args: argparse.Namespace) -> dict:
         recipe["mode"] = "full"
     if args.cpt:
         recipe["mode"] = "cpt"
+    if args.vision:
+        recipe["vision"] = True
     if args.packing:
         recipe["packing"] = True
     if args.use_rslora:
@@ -303,9 +320,18 @@ def load_sft_data(data_dir: str) -> list[dict]:
     return examples
 
 
+def _get_model_class(recipe: dict):
+    """Return the appropriate Unsloth model class (language or vision)."""
+    if recipe.get("vision"):
+        from unsloth import FastVisionModel
+        return FastVisionModel
+    from unsloth import FastLanguageModel
+    return FastLanguageModel
+
+
 def _load_model(recipe: dict):
     """Load model with all recipe-configured options."""
-    from unsloth import FastLanguageModel
+    ModelClass = _get_model_class(recipe)
 
     model_name = recipe["model"]
     is_full = recipe["mode"] == "full"
@@ -345,24 +371,35 @@ def _load_model(recipe: dict):
     if recipe.get("unsloth_tiled_mlp"):
         load_kwargs["unsloth_tiled_mlp"] = True
 
-    model, tokenizer = FastLanguageModel.from_pretrained(**load_kwargs)
+    model, tokenizer = ModelClass.from_pretrained(**load_kwargs)
     return model, tokenizer
 
 
 def _apply_lora(model, recipe: dict):
     """Apply LoRA with all recipe-configured options."""
-    from unsloth import FastLanguageModel
+    ModelClass = _get_model_class(recipe)
 
     peft_kwargs = dict(
         r=recipe["lora_rank"],
         lora_alpha=recipe["lora_alpha"],
-        target_modules=recipe["lora_targets"],
         lora_dropout=recipe.get("lora_dropout", 0),
         bias=recipe.get("bias", "none"),
         use_gradient_checkpointing=recipe.get("gradient_checkpointing", "unsloth"),
         use_rslora=recipe.get("use_rslora", False),
         random_state=recipe.get("seed", 42),
     )
+
+    if recipe.get("vision"):
+        # Vision models use finetune_*_layers/modules instead of target_modules
+        peft_kwargs["finetune_vision_layers"] = recipe.get("finetune_vision_layers", True)
+        peft_kwargs["finetune_language_layers"] = recipe.get("finetune_language_layers", True)
+        peft_kwargs["finetune_attention_modules"] = recipe.get("finetune_attention_modules", True)
+        peft_kwargs["finetune_mlp_modules"] = recipe.get("finetune_mlp_modules", True)
+        # Vision models default to "all-linear" target_modules
+        peft_kwargs["target_modules"] = recipe.get("lora_targets", "all-linear")
+    else:
+        peft_kwargs["target_modules"] = recipe["lora_targets"]
+
     if recipe.get("loftq_config"):
         peft_kwargs["loftq_config"] = recipe["loftq_config"]
     if recipe.get("init_lora_weights") is not True and recipe.get("init_lora_weights") is not None:
@@ -374,7 +411,7 @@ def _apply_lora(model, recipe: dict):
     if recipe.get("qat_scheme"):
         peft_kwargs["qat_scheme"] = recipe["qat_scheme"]
 
-    return FastLanguageModel.get_peft_model(model, **peft_kwargs)
+    return ModelClass.get_peft_model(model, **peft_kwargs)
 
 
 def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Namespace):
@@ -384,10 +421,11 @@ def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Names
 
     model_name = recipe["model"]
     is_full = recipe["mode"] == "full"
+    is_vision = recipe.get("vision", False)
     max_seq_len = recipe["max_seq_len"]
     use_bf16 = is_bfloat16_supported()
 
-    print(f"\n=== Loading model: {model_name} ===")
+    print(f"\n=== Loading model: {model_name} {'(vision)' if is_vision else ''} ===")
     model, tokenizer = _load_model(recipe)
 
     if not is_full:
@@ -405,15 +443,24 @@ def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Names
 
     from datasets import Dataset
 
-    def format_example(example):
-        messages = example.get("messages", [])
-        kwargs = dict(tokenize=False, add_generation_prompt=False)
-        if recipe.get("reasoning_effort"):
-            kwargs["reasoning_effort"] = recipe["reasoning_effort"]
-        text = tokenizer.apply_chat_template(messages, **kwargs)
-        return {"text": text}
+    if is_vision:
+        # Vision: keep messages as-is (with image/audio content blocks).
+        # UnslothVisionDataCollator handles tokenization and image processing.
+        # Use list comprehension instead of .map() for multi-image support.
+        converted = []
+        for ex in examples:
+            converted.append({"messages": ex.get("messages", [])})
+        dataset = Dataset.from_list(converted)
+    else:
+        def format_example(example):
+            messages = example.get("messages", [])
+            kwargs = dict(tokenize=False, add_generation_prompt=False)
+            if recipe.get("reasoning_effort"):
+                kwargs["reasoning_effort"] = recipe["reasoning_effort"]
+            text = tokenizer.apply_chat_template(messages, **kwargs)
+            return {"text": text}
 
-    dataset = Dataset.from_list(examples).map(format_example)
+        dataset = Dataset.from_list(examples).map(format_example)
 
     # Optional train/eval split
     eval_split = recipe.get("eval_split", 0.0)
@@ -453,12 +500,18 @@ def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Names
         optim=recipe.get("optim", "adamw_8bit"),
         seed=recipe["seed"],
         max_seq_length=max_seq_len,
-        dataset_text_field="text",
-        packing=recipe["packing"],
         report_to="none" if recipe.get("no_wandb") else "wandb",
         run_name=f"swe-gym-sft-{'full' if is_full else 'lora'}-{Path(model_name).name}",
         **train_kwargs,
     )
+
+    # Vision mode: no packing, no text field (collator handles it)
+    if not is_vision:
+        sft_kwargs["dataset_text_field"] = "text"
+        sft_kwargs["packing"] = recipe["packing"]
+    else:
+        sft_kwargs["remove_unused_columns"] = False
+        sft_kwargs["dataset_kwargs"] = {"skip_prepare_dataset": True}
     if recipe.get("warmup_ratio"):
         sft_kwargs["warmup_ratio"] = recipe["warmup_ratio"]
     if eval_dataset:
@@ -473,7 +526,7 @@ def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Names
 
     training_args = SFTConfig(**sft_kwargs)
 
-    trainer = SFTTrainer(
+    trainer_kwargs = dict(
         model=model,
         tokenizer=tokenizer,
         train_dataset=train_dataset,
@@ -481,8 +534,27 @@ def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Names
         args=training_args,
     )
 
-    # Train on completions only — ~1% accuracy boost per QLoRA paper
-    if recipe.get("train_on_completions"):
+    # Vision: use UnslothVisionDataCollator for image/audio processing
+    if is_vision:
+        from unsloth import UnslothVisionDataCollator
+        collator_kwargs = dict(model=model, tokenizer=tokenizer)
+        if recipe.get("vision_resize") is not None:
+            collator_kwargs["resize"] = recipe["vision_resize"]
+        if recipe.get("vision_snap_to_patch_size") is not None:
+            collator_kwargs["snap_to_patch_size"] = recipe["vision_snap_to_patch_size"]
+        # train_on_completions via collator for vision
+        if recipe.get("train_on_completions"):
+            collator_kwargs["completion_only_loss"] = True
+            collator_kwargs["train_on_responses_only"] = True
+            collator_kwargs["instruction_part"] = recipe.get("instruction_part")
+            collator_kwargs["response_part"] = recipe.get("response_part")
+            print("  Training on completions only (via vision collator)")
+        trainer_kwargs["data_collator"] = UnslothVisionDataCollator(**collator_kwargs)
+
+    trainer = SFTTrainer(**trainer_kwargs)
+
+    # Train on completions only — ~1% accuracy boost per QLoRA paper (text mode)
+    if recipe.get("train_on_completions") and not is_vision:
         from unsloth.chat_templates import train_on_responses_only
         trainer = train_on_responses_only(
             trainer,
@@ -501,7 +573,8 @@ def train_sft(recipe: dict, data_dir: str, output_dir: str, args: argparse.Names
         print(f"  Early stopping: patience={patience}")
 
     mode_str = "full" if is_full else "LoRA"
-    print(f"\n=== Starting {mode_str} SFT ===")
+    vision_str = " (vision)" if is_vision else ""
+    print(f"\n=== Starting {mode_str} SFT{vision_str} ===")
     print(f"  Model:      {model_name}")
     print(f"  Epochs:     {recipe['epochs']}")
     print(f"  Batch size: {recipe['batch_size']} x {recipe['grad_accum']} grad accum")
