@@ -1,0 +1,59 @@
+# Unsloth Vision SFT — Google Gemma 4 31B (Dense, Vision)
+# Vision fine-tuning of the largest dense Gemma 4 using FastVisionModel.
+# Supports image + text inputs. 256K context.
+# VRAM: ~24GB (4-bit) or ~40GB (8-bit) or ~70GB (16-bit)
+#
+# Data format: messages with content blocks (not plain text).
+#   [{"role": "user", "content": [
+#       {"type": "image", "image": <PIL.Image or URL>},
+#       {"type": "text", "text": "Describe this image."}
+#   ]},
+#   {"role": "assistant", "content": [
+#       {"type": "text", "text": "The image shows..."}
+#   ]}]
+#
+# Images should be 300-1000px, same dimensions preferred for batching.
+#
+# Reasoning: Gemma 4 supports <|think|> reasoning via system prompt.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_vision_lora.yaml --four-bit
+#
+# Multi-GPU:
+#   uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_vision_lora.yaml --device-map balanced
+
+model: google/gemma-4-31B-it
+mode: lora
+vision: true  # Use FastVisionModel + UnslothVisionDataCollator
+four_bit: true  # Required for single-GPU (24GB)
+
+# LoRA config
+lora_rank: 16
+lora_alpha: 16
+lora_targets: "all-linear"  # Vision models use all-linear by default
+
+# Vision-specific: which components to fine-tune
+finetune_vision_layers: true    # Train vision encoder
+finetune_language_layers: true  # Train language layers
+finetune_attention_modules: true
+finetune_mlp_modules: true
+
+# Image processing
+# vision_resize: null         # Auto; or int (pixels), "min", "max"
+# vision_snap_to_patch_size: true
+
+# Training — lower LR for larger model
+lr: 1e-4
+epochs: 2
+batch_size: 1
+grad_accum: 8
+max_seq_len: 4096  # Lower for vision (images consume many tokens)
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# Vision collator handles train_on_completions
+train_on_completions: true
+instruction_part: "<start_of_turn>user\n"
+response_part: "<start_of_turn>model\n"

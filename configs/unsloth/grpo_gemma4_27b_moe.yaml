@@ -1,0 +1,46 @@
+# Unsloth GRPO — Google Gemma 4 26B-A4B (MoE, 4B active)
+# RL training with Gemma 4 MoE — efficient inference (only 4B active).
+# VRAM: ~24GB (16-bit with vLLM) — 4-bit NOT recommended for MoE
+#
+# IMPORTANT: 4-bit quantization is NOT recommended for MoE variants.
+#   Use 16-bit (default) or 8-bit. Multi-GPU: --device-map balanced
+#
+# Reasoning: Use <|think|> in system prompt for chain-of-thought.
+#   GRPO naturally preserves reasoning when reward signals value it.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gemma4_27b_moe.yaml
+
+model: google/gemma-4-26B-A4B-it
+mode: grpo
+# four_bit: false  # NOT recommended for MoE — use 16-bit
+
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+lr: 3e-6
+steps: 200
+batch_size: 4
+num_generations: 4
+max_seq_len: 8192
+max_completion_len: 4096
+reward_mode: hybrid
+
+temperature: 1.0
+top_p: 0.95
+top_k: 64
+min_p: 0.1
+gpu_memory_utilization: 0.5  # Lower for MoE memory overhead
+
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine

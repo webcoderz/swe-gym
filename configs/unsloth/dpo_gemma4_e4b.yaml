@@ -1,0 +1,47 @@
+# Unsloth DPO — Google Gemma 4 E4B (8B, Dense+PLE)
+# Direct Preference Optimization after SFT.
+# Aligns model to prefer better solutions from preference pairs.
+# VRAM: ~5GB (4-bit) or ~16GB (16-bit LoRA)
+#
+# Requires: SFT checkpoint + dpo_preferences.json in data dir.
+# Format: [{"prompt": "...", "chosen": "...", "rejected": "..."}, ...]
+#
+# Reasoning: DPO can reinforce reasoning quality by preferring
+#   solutions with clear chain-of-thought over direct answers.
+#   See: https://unsloth.ai/docs/models/gemma-4/train
+#
+# Usage:
+#   uv run python scripts/08_train_sft_unsloth.py \
+#     --recipe configs/unsloth/dpo_gemma4_e4b.yaml \
+#     --dpo --sft-checkpoint ./sft_output/
+
+model: google/gemma-4-E4B-it
+mode: lora
+four_bit: false
+
+# LoRA config
+lora_rank: 16
+lora_alpha: 16
+lora_targets:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+
+# Training
+lr: 2e-4
+epochs: 2
+batch_size: 1
+grad_accum: 4
+max_seq_len: 8192
+warmup_steps: 10
+weight_decay: 0.01
+lr_scheduler: cosine
+
+# DPO-specific
+dpo_lr: 2e-5
+dpo_beta: 0.05       # KL penalty — lower = more aggressive alignment
+dpo_label_smoothing: 0.0
