@@ -49,5 +49,8 @@ train_on_completions: true
 instruction_part: "<start_of_turn>user\n"
 response_part: "<start_of_turn>model\n"
 
+# MoE optimization: use grouped_mm backend for faster training (GRPO script).
+# moe_backend: grouped_mm  # 12x faster MoE training (when supported)
+
 # Reasoning: maintain >=75% reasoning examples in training data.
 # Add "<|think|>" to system prompt to activate thinking mode.

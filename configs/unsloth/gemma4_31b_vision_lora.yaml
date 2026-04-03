@@ -34,7 +34,9 @@ lora_alpha: 16
 lora_targets: "all-linear"  # Vision models use all-linear by default
 
 # Vision-specific: which components to fine-tune
-finetune_vision_layers: true    # Train vision encoder
+# Tip: start with finetune_vision_layers: false to save VRAM,
+# enable after text-only training works well.
+finetune_vision_layers: false   # Set true to also train vision encoder
 finetune_language_layers: true  # Train language layers
 finetune_attention_modules: true
 finetune_mlp_modules: true

@@ -44,3 +44,6 @@ gpu_memory_utilization: 0.5  # Lower for MoE memory overhead
 warmup_steps: 10
 weight_decay: 0.01
 lr_scheduler: cosine
+
+# MoE optimization — 12x faster MoE training
+# moe_backend: grouped_mm  # Uncomment if supported by your hardware

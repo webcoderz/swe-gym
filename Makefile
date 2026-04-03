@@ -5,7 +5,10 @@
 	smoke-test deploy-skills gen-trajectories prepare-sft train-sft \
 	train-sft-unsloth train-dpo-unsloth train-grpo train-grpo-gptoss-120b \
 	train-sft-unsloth-gptoss-120b train-sft-fp8 train-grpo-fp8 \
-	train-sft-nemotron-super train-grpo-nemotron-super hpo hpo-thorough clean
+	train-sft-nemotron-super train-grpo-nemotron-super hpo hpo-thorough clean \
+	train-sft-gemma4 train-sft-gemma4-31b train-sft-gemma4-moe \
+	train-sft-gemma4-vision train-grpo-gemma4 train-grpo-gemma4-31b \
+	train-grpo-gemma4-moe train-dpo-gemma4 hpo-gemma4
 
 # Load repo config (REPO_OWNER, REPO_NAME, REPO_KEY, etc.)
 include repo.conf
@@ -158,6 +161,31 @@ train-sft-qwen3-coder:
 train-sft-nemotron-super:
 	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/nemotron3_super_lora.yaml --device-map balanced
 
+# Gemma 4 family
+train-sft-gemma4:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e4b_lora.yaml
+
+train-sft-gemma4-4bit:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e4b_lora.yaml --four-bit
+
+train-sft-gemma4-e2b:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e2b_lora.yaml
+
+train-sft-gemma4-31b:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_lora.yaml --four-bit
+
+train-sft-gemma4-moe:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_27b_moe_lora.yaml --device-map balanced
+
+train-sft-gemma4-vision:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_e4b_vision_lora.yaml
+
+train-sft-gemma4-vision-31b:
+	uv run python scripts/08_train_sft_unsloth.py --recipe configs/unsloth/gemma4_31b_vision_lora.yaml --four-bit
+
+train-dpo-gemma4:
+	uv run python scripts/08_train_sft_unsloth.py --dpo --recipe configs/unsloth/dpo_gemma4_e4b.yaml --sft-checkpoint ./sft_output/
+
 # DPO and CPT
 train-dpo-unsloth:
 	uv run python scripts/08_train_sft_unsloth.py --dpo --sft-checkpoint ./sft_output/
@@ -212,12 +240,27 @@ train-grpo-nemotron-super:
 train-grpo-gptoss-120b:
 	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gpt_oss_120b.yaml --device-map balanced
 
+train-grpo-gemma4:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gemma4_e4b.yaml
+
+train-grpo-gemma4-e2b:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gemma4_e2b.yaml
+
+train-grpo-gemma4-31b:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gemma4_31b.yaml
+
+train-grpo-gemma4-moe:
+	uv run python scripts/09_train_grpo.py --recipe configs/unsloth/grpo_gemma4_27b_moe.yaml --device-map balanced
+
 # ── Hyperparameter optimization ───────────────────────────────
 hpo:
 	uv run python scripts/08b_hpo.py --recipe configs/unsloth/qwen3_8b_lora.yaml --four-bit
 
 hpo-thorough:
 	uv run python scripts/08b_hpo.py --recipe configs/unsloth/qwen3_8b_lora.yaml --four-bit --n-trials 30 --steps-per-trial 100
+
+hpo-gemma4:
+	uv run python scripts/08b_hpo.py --recipe configs/unsloth/hpo_gemma4_e4b.yaml
 
 # ── FP8 training (RTX 40/50, H100+) ──────────────────────────
 train-sft-fp8:
